@@ -156,7 +156,7 @@ fn solve(c: &Cube) -> Option<Vec<Move>> {
 }
 
 fn main() {
-    // Demonstrate solving a 2-move scramble.
+    // Demonstrate solving a 3-move scramble.
     let mut easy = Cube::new();
     easy = Move::F.apply(&easy);
     easy = Move::L.apply(&easy);
