@@ -1,6 +1,9 @@
 // A 2x2 Rubik's cube solver adapted from an MIT course:
 // https://courses.csail.mit.edu/6.006/fall07/source/rubik.py
 // https://courses.csail.mit.edu/6.006/fall07/source/test-rubik.py
+//
+// Compile with `rustc -C opt-level=3 solve_2x2.rs`.
+// If you don't use opt-level=3, the program is 15x slower.
 
 use std::collections::{HashMap, VecDeque};
 
