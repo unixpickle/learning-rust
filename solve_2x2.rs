@@ -101,15 +101,18 @@ impl Searcher {
         for _ in 0..num_search {
             match self.to_expand.pop_front() {
                 Some(partial) => {
+                    // Each line that does heavy-lifting is commented
+                    // with approximately how much time total is spent
+                    // in that line on my CPU with no optimizations.
                     for m in &[Move::F, Move::Fi, Move::L, Move::Li, Move::U, Move::Ui] {
-                        let next_cube = m.apply(&partial.0);
-                        if self.found.contains_key(&next_cube) {
+                        let next_cube = m.apply(&partial.0); // 0.23
+                        if self.found.contains_key(&next_cube) { // 0.18
                             continue
                         }
-                        let mut next_sequence = partial.1.clone();
-                        next_sequence.push(*m);
-                        self.found.insert(next_cube, next_sequence.clone());
-                        self.to_expand.push_back(PartialSolution(next_cube, next_sequence));
+                        let mut next_sequence = partial.1.clone(); // 0.12
+                        next_sequence.push(*m); // ~0
+                        self.found.insert(next_cube, next_sequence.clone()); // 0.47
+                        self.to_expand.push_back(PartialSolution(next_cube, next_sequence)); // ~0
                     }
                 },
                 None => panic!("should not be empty")
