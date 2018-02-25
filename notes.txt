@@ -1,11 +1,14 @@
 What does Sized mean? Doesn't everything have a static size?
 
 What's "as" mean in the where clause in https://doc.rust-lang.org/std/iter/trait.IntoIterator.html
+-> The website displays constraints in a different way. In the code, it's `type IntoIter: Iterator<Item=Self::Item>`.
 
 Why does FromIterator take an IntoIterator, not an Iterator directly?
 https://doc.rust-lang.org/std/iter/trait.FromIterator.html
+-> It's more general this way, since Iterator implements IntoIterator.
 
 Can you call into_iter() multiple times? I don't think so, since self isn't a reference.
+-> You can't, unless the type is Copy (all references are).
 
 What does From::from() do here https://doc.rust-lang.org/src/alloc/vec.rs.html#2226-2230
 
@@ -14,5 +17,7 @@ Project idea: implement a linked-list.
 Try making a struct with a reference field, then make a method that takes a reference and puts it into a struct instance.
 
 Why does hashmap[key] want key to be a reference?
+-> Because hashmap[key] is only for reading, you have to call a method to insert.
 
 How does moving_method.rs work when Vec doesn't implement Copy, only Clone? Is it because all references implement Copy?
+-> all refs implement Copy/Clone, as show in refs_copyable.rs.
