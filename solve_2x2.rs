@@ -54,7 +54,10 @@ impl Move {
             19, 15, 16, 17, 7, 8, 6, 21, 22, 23]);
         let u_move = Cube([5, 3, 4, 16, 17, 15, 6, 7, 8, 9, 10, 11, 1, 2, 0,
             14, 12, 13, 18, 19, 20, 21, 22, 23]);
-        // TODO: why does rustc give a warning without Move::?
+        // If we do this match without Move::, things compile
+        // but with warnings. This is because you're binding
+        // a default case to a variable called F, Fi, etc.
+        // See weird_match.rs.
         match *self {
             Move::F => cube.permute(&f_move),
             Move::Fi => cube.permute_inv(&f_move),
@@ -122,16 +125,23 @@ impl Searcher {
 }
 
 fn fwd_bwd_intersection(fwd: &Searcher, bwd: &Searcher) -> Option<Vec<Move>> {
-    // TODO: why is fwd.to_expand not already a reference here?
+    // We can only use fwd.to_expand as an immutable
+    // ref, since it is a field of an immutable ref.
     for partial in &fwd.to_expand {
-        // TODO: why is partial.0 not already a reference here?
+        // partial is a &PartialSolution, since into_iter() on
+        // a &Vec generates &T.
         if bwd.found.contains_key(&partial.0) {
-            // TODO: how come we don't need &partial.1 here to
-            // call a method on it? Is it because self is a
-            // reference already?
+            // We can call clone() because it takes &self.
             let mut part1 = partial.1.clone();
+            // Here, we would be able to pass around partial.0
+            // because it implements Copy, so we don't have to
+            // move it to hand out ownership.
             let mut part2 = bwd.found[&partial.0].clone();
             part2.reverse();
+            // If we tried to call collect() on the result of
+            // map(), we would get an error because extend()
+            // takes a generic argument and collect() returns
+            // a generic return value.
             part1.extend(part2.into_iter().map(|x| x.inverse()));
             return Some(part1);
         }
