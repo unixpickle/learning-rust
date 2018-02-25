@@ -21,16 +21,16 @@ impl Cube {
 
     fn permute(&self, perm: &Cube) -> Cube {
         let mut res = Cube::new();
-        for (i, c) in perm.0.into_iter().enumerate() {
-            res.0[i as usize] = self.0[*c as usize];
+        for i in 0..24 {
+            res.0[i as usize] = self.0[perm.0[i] as usize];
         }
         res
     }
 
     fn permute_inv(&self, perm: &Cube) -> Cube {
         let mut res: Cube = Cube([0; 24]);
-        for (i, c) in perm.0.into_iter().enumerate() {
-            res.0[*c as usize] = self.0[i as usize];
+        for i in 0..24 {
+            res.0[perm.0[i] as usize] = self.0[i as usize];
         }
         res
     }
