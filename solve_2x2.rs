@@ -146,7 +146,7 @@ fn solve(c: &Cube) -> Option<Vec<Move>> {
     let mut fwd = Searcher::new(c);
     let mut bwd = Searcher::new(&Cube::new());
     check_solution!(&fwd, &bwd);
-    for i in 0..7 {
+    for _ in 0..7 {
         fwd.expand_depth();
         check_solution!(&fwd, &bwd);
         bwd.expand_depth();
