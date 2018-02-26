@@ -24,10 +24,10 @@ fn main() {
     let v = Vec::<i8>::new();
     foo(v);
 
-    // Doesn't work, because we don't implement MutableFoo for &mut MyFoo:
+    // Doesn't work, because we don't implement MutableFoo for MyFoo:
     //
     //     let mut x = MyFoo(17);
-    //     bar(&mut x);
+    //     bar(x);
     //
 
     // Works, because MyFoo implements MutableFoo.
