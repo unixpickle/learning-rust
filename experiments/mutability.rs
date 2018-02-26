@@ -30,7 +30,7 @@ fn main() {
     //     bar(x);
     //
 
-    // Works, because MyFoo implements MutableFoo.
+    // Works, because &mut MyFoo implements MutableFoo.
     bar(&mut MyFoo(17));
 }
 
