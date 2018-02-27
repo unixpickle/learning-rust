@@ -9,6 +9,20 @@ struct Tensor {
     shape: Vec<usize>
 }
 
+impl Tensor {
+    fn new(shape: Vec<usize>) -> Tensor {
+        let mut size: usize = 1;
+        for x in shape.clone() {
+            size *= x;
+        }
+        let mut res = Tensor{data: Vec::<f32>::new(), shape: shape};
+        for _ in 0..size {
+            res.data.push(0f32);
+        }
+        res
+    }
+}
+
 macro_rules! define_tensor_op {
     ($trait:tt, $fn:tt) => {
         impl<'a, 'b> $trait<&'b Tensor> for &'a Tensor {
@@ -121,5 +135,31 @@ define_op_res!(Sub, sub, SubRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Ten
     b.backward(&(out_grad * -1f32));
 });
 
+struct Variable {
+    data: Tensor,
+    grad: Tensor
+}
+
+impl Variable {
+    fn new(value: Tensor) -> Variable {
+        let grad = Tensor::new(value.shape.clone());
+        Variable{
+            data: value,
+            grad: grad
+        }
+    }
+}
+
+impl<'a> Res for &'a mut Variable {
+    fn value(&self) -> &Tensor {
+        &self.data
+    }
+
+    fn backward(&mut self, out_grad: &Tensor) {
+        self.grad = &self.grad + out_grad;
+    }
+}
+
 fn main() {
+
 }
