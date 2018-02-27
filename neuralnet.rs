@@ -1,6 +1,6 @@
 // Toy neural network training in Rust.
 
-use std::ops::Add;
+use std::ops::{Add, Mul, Div, Sub};
 
 // An N-dimensional array of floating-point values.
 #[derive(Clone)]
@@ -9,22 +9,29 @@ struct Tensor {
     shape: Vec<usize>
 }
 
-macro_rules! tensor_op {
-    ($t1:expr, $op:tt, $t2:expr) => {
-        {
-            let t1 = $t1;
-            let t2 = $t2;
-            let mut result = Tensor{data: Vec::<f32>::new(), shape: t1.shape.clone()};
-            if t1.shape != t2.shape || t1.data.len() != t2.data.len() {
-                panic!("shape mismatch");
+macro_rules! define_tensor_op {
+    ($trait:tt, $fn:tt) => {
+        impl<'a> $trait<&'a Tensor> for &'a Tensor {
+            type Output = Tensor;
+
+            fn $fn(self, rhs: &Tensor) -> Tensor {
+                let mut result = Tensor{data: Vec::<f32>::new(), shape: self.shape.clone()};
+                if self.shape != rhs.shape || self.data.len() != rhs.data.len() {
+                    panic!("shape mismatch");
+                }
+                for i in 0..self.data.len() {
+                    result.data.push($trait::$fn(self.data[i], rhs.data[i]));
+                }
+                result
             }
-            for i in 0..t1.data.len() {
-                result.data.push(t1.data[i] $op t2.data[i]);
-            }
-            result
         }
     }
 }
+
+define_tensor_op!(Add, add);
+define_tensor_op!(Mul, mul);
+define_tensor_op!(Div, div);
+define_tensor_op!(Sub, sub);
 
 // A tensor that can be back-propagated through.
 trait Res {
@@ -54,7 +61,7 @@ impl Add for Box<Res> {
     type Output = Box<Res>;
 
     fn add(self, b: Box<Res>) -> Box<Res> {
-        let tensor = tensor_op!(self.value(), +, b.value());
+        let tensor = self.value() + b.value();
         Box::new(Sum{
             a: self,
             b: b,
