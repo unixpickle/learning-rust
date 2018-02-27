@@ -21,3 +21,9 @@ Why does hashmap[key] want key to be a reference?
 
 How does moving_method.rs work when Vec doesn't implement Copy, only Clone? Is it because all references implement Copy?
 -> all refs implement Copy/Clone, as show in refs_copyable.rs.
+
+Why does Box's contained type need to be 'static?
+
+When self is a &mut, why doesn't *self.b or *self.b.deref_mut() work when b is a Box<T>? self.b.as_mut() does work.
+
+Why can't we immutably borrow an object as part of constructing an argument for a mutable method on that object?
