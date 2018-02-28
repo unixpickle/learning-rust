@@ -1,5 +1,6 @@
 // Toy neural network training in Rust.
 
+use std::collections::HashMap;
 use std::ops::{Add, Mul, Div, Sub};
 
 // An N-dimensional array of floating-point values.
@@ -71,13 +72,30 @@ define_tensor_op!(Mul, mul);
 define_tensor_op!(Div, div);
 define_tensor_op!(Sub, sub);
 
+struct Gradient(HashMap<String, Tensor>);
+
+impl Gradient {
+    fn new(name: String, value: Tensor) -> Gradient {
+        let mut res = Gradient(HashMap::<String, Tensor>::new());
+        res.0.insert(name, value);
+        res
+    }
+
+    fn combine(mut self, other: Gradient) -> Gradient {
+        for (k, v) in other.0.into_iter() {
+            self.0.insert(k, v);
+        }
+        self
+    }
+}
+
 // A tensor that can be back-propagated through.
 trait Res {
     fn value(&self) -> &Tensor;
 
     fn name(&self) -> String;
 
-    fn backward(&mut self, out_grad: &Tensor);
+    fn backward(&mut self, out_grad: &Tensor) -> Gradient;
 }
 
 macro_rules! define_op_res {
@@ -97,11 +115,11 @@ macro_rules! define_op_res {
                 format!("{}<{}, {}>", $name, self.a.name(), self.b.name())
             }
 
-            fn backward(&mut self, out_grad: &Tensor) {
+            fn backward(&mut self, out_grad: &Tensor) -> Gradient {
                 $bwd;
                 // TODO: why doesn't *self.a or self.a.deref_mut() work?
                 // TODO: why the static in Box<Res + 'static>?
-                bwd(self.a.as_mut(), self.b.as_mut(), out_grad);
+                bwd(self.a.as_mut(), self.b.as_mut(), out_grad)
             }
         }
 
@@ -116,43 +134,40 @@ macro_rules! define_op_res {
     }
 }
 
-define_op_res!("Add", Add, add, AddRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
-    a.backward(out_grad);
-    b.backward(out_grad);
-});
+define_op_res!("Add", Add, add, AddRes,
+    fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) -> Gradient {
+        a.backward(out_grad).combine(b.backward(out_grad))
+    });
 
-define_op_res!("Mul", Mul, mul, MulRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
-    a.backward(&(out_grad * b.value()));
-    b.backward(&(out_grad * a.value()));
-});
+define_op_res!("Mul", Mul, mul, MulRes,
+    fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) -> Gradient {
+        a.backward(&(out_grad * b.value())).combine(b.backward(&(out_grad * a.value())))
+    });
 
-define_op_res!("Div", Div, div, DivRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
-    a.backward(&(out_grad / b.value()));
-    // TODO: figure out why we have to bind b_grad to a
-    // variable and then pass it in.
-    // I think it's because b.backward() grabs a mutable
-    // reference to b before b.value() can run.
-    let b_grad = &(-1f32 * &(a.value() * out_grad)) / &(b.value() * b.value());
-    b.backward(&b_grad);
-});
+define_op_res!("Div", Div, div, DivRes,
+    fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) -> Gradient{
+        // TODO: figure out why we have to bind b_grad to a
+        // variable and then pass it in.
+        // I think it's because b.backward() grabs a mutable
+        // reference to b before b.value() can run.
+        let b_grad = &(-1f32 * &(a.value() * out_grad)) / &(b.value() * b.value());
+        a.backward(&(out_grad / b.value())).combine(b.backward(&b_grad))
+    });
 
-define_op_res!("Sub", Sub, sub, SubRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
-    a.backward(out_grad);
-    b.backward(&(out_grad * -1f32));
-});
+define_op_res!("Sub", Sub, sub, SubRes,
+    fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) -> Gradient {
+        a.backward(out_grad).combine(b.backward(&(out_grad * -1f32)))
+    });
 
 struct Variable {
     data: Tensor,
-    grad: Tensor,
     name: String
 }
 
 impl Variable {
     fn new(name: String, value: Tensor) -> Variable {
-        let grad = Tensor::new(value.shape.clone());
         Variable{
             data: value,
-            grad: grad,
             name: name
         }
     }
@@ -167,8 +182,8 @@ impl<'a> Res for &'a mut Variable {
         self.name.clone()
     }
 
-    fn backward(&mut self, out_grad: &Tensor) {
-        self.grad = &self.grad + out_grad;
+    fn backward(&mut self, out_grad: &Tensor) -> Gradient {
+        Gradient::new(self.name(), out_grad.clone())
     }
 }
 
