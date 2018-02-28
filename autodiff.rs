@@ -1,4 +1,24 @@
-// Toy neural network training in Rust.
+// Reverse-mode automatic differentiation.
+//
+// Components of the system:
+//  - Tensor: a shaped vector of floats.
+//  - Gradient: a mapping of variable names to grads.
+//  - Res: an abstract differentiable value.
+//  - Variable: a Res that returns its upstream gradient.
+//  - Fork: a Res that allows you to use a Box<Res> more
+//    than once, since operations on Box<Res> normally
+//    consume the operands. The Fork also accumulates
+//    upstream gradients to avoid double-backprop.
+//  - Constant: a hacky Res with a constant value.
+//
+// In general, all nodes in the graph are supposed to have
+// a unique identifier (otherwise, Fork wouldn't be able
+// to uniquely identify its quasi-variable).
+// In other languages, this wouldn't be necessary, since a
+// reference to a Variable (e.g. a pointer) could uniquely
+// identify it. It might be possible to do this by using
+// generics instead of trait objects, although that would
+// result in a TON of types being created.
 
 use std::collections::HashMap;
 use std::ops::{Add, Mul, Div, Sub};
