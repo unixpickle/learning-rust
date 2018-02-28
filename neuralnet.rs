@@ -75,11 +75,13 @@ define_tensor_op!(Sub, sub);
 trait Res {
     fn value(&self) -> &Tensor;
 
+    fn name(&self) -> String;
+
     fn backward(&mut self, out_grad: &Tensor);
 }
 
 macro_rules! define_op_res {
-    ($trait:tt, $fn:tt, $res_name:tt, $bwd:item) => {
+    ($name:expr, $trait:tt, $fn:tt, $res_name:tt, $bwd:item) => {
         struct $res_name {
             a: Box<Res>,
             b: Box<Res>,
@@ -91,10 +93,14 @@ macro_rules! define_op_res {
                 &self.out
             }
 
+            fn name(&self) -> String {
+                format!("{}<{}, {}>", $name, self.a.name(), self.b.name())
+            }
+
             fn backward(&mut self, out_grad: &Tensor) {
                 $bwd;
                 // TODO: why doesn't *self.a or self.a.deref_mut() work?
-                // TODO: why he static in Box<Res + 'static>?
+                // TODO: why the static in Box<Res + 'static>?
                 bwd(self.a.as_mut(), self.b.as_mut(), out_grad);
             }
         }
@@ -110,19 +116,19 @@ macro_rules! define_op_res {
     }
 }
 
-define_op_res!(Add, add, AddRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
+define_op_res!("Add", Add, add, AddRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
     a.backward(out_grad);
     b.backward(out_grad);
 });
 
-define_op_res!(Mul, mul, MulRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
+define_op_res!("Mul", Mul, mul, MulRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
     a.backward(&(out_grad * b.value()));
     b.backward(&(out_grad * a.value()));
 });
 
-define_op_res!(Div, div, DivRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
+define_op_res!("Div", Div, div, DivRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
     a.backward(&(out_grad / b.value()));
-    // TODO: figure out why we have to find b_grad to a
+    // TODO: figure out why we have to bind b_grad to a
     // variable and then pass it in.
     // I think it's because b.backward() grabs a mutable
     // reference to b before b.value() can run.
@@ -130,22 +136,24 @@ define_op_res!(Div, div, DivRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Ten
     b.backward(&b_grad);
 });
 
-define_op_res!(Sub, sub, SubRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
+define_op_res!("Sub", Sub, sub, SubRes, fn bwd(a: &mut Res, b: &mut Res, out_grad: &Tensor) {
     a.backward(out_grad);
     b.backward(&(out_grad * -1f32));
 });
 
 struct Variable {
     data: Tensor,
-    grad: Tensor
+    grad: Tensor,
+    name: String
 }
 
 impl Variable {
-    fn new(value: Tensor) -> Variable {
+    fn new(name: String, value: Tensor) -> Variable {
         let grad = Tensor::new(value.shape.clone());
         Variable{
             data: value,
-            grad: grad
+            grad: grad,
+            name: name
         }
     }
 }
@@ -153,6 +161,10 @@ impl Variable {
 impl<'a> Res for &'a mut Variable {
     fn value(&self) -> &Tensor {
         &self.data
+    }
+
+    fn name(&self) -> String {
+        self.name.clone()
     }
 
     fn backward(&mut self, out_grad: &Tensor) {
