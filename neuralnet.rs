@@ -245,6 +245,49 @@ impl Res for Fork {
     }
 }
 
-fn main() {
+struct Constant(Tensor, String);
 
+impl Constant {
+    fn new(shape: Vec<usize>, value: f32) -> Constant {
+        let mut res = Constant(Tensor::new(shape), format!("{}", value));
+        for i in 0..res.0.data.len() {
+            res.0.data[i] = value;
+        }
+        res
+    }
+}
+
+impl Res for Constant {
+    fn value(&self) -> &Tensor {
+        &self.0
+    }
+
+    fn name(&self) -> String {
+        self.1.clone()
+    }
+
+    fn backward(&mut self, _: &Tensor) -> Gradient {
+        Gradient(HashMap::<String, Tensor>::new())
+    }
+}
+
+fn main() {
+    // Approximate sin(x) for x=0, x=0.2, x=0.4.
+    let x = Variable::new("x".to_string(),
+        Tensor{shape: vec![3], data: vec![0f32, 0.2f32, 0.4f32]});
+    let shape = x.value().shape.clone();
+    let mut sin = Fork::fork(Box::new(x), 5, |mut xs| {
+        let x2 = xs.pop().expect("no field") * xs.pop().expect("no field");
+        Fork::fork(x2, 3, |mut x2s| {
+            let x1 = xs.pop().expect("no field");
+            let x3 = xs.pop().expect("no field") * x2s.pop().expect("no field");
+            let x5 = xs.pop().expect("no field") * x2s.pop().expect("no field") *
+                x2s.pop().expect("no field");
+            x1 - (x3 / Box::new(Constant::new(shape.clone(), 6f32))) +
+                (x5 / Box::new(Constant::new(shape, 120f32)))
+        })
+    });
+    println!("sin(0, 0.2, 0.4): {:?}", sin.value().data);
+    let out_grad = Tensor{shape: vec![3], data: vec![1f32, 1f32, 1f32]};
+    println!("cos(0, 0.2, 0.4): {:?}", sin.backward(&out_grad).0["x"].data)
 }
