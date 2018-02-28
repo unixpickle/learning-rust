@@ -190,20 +190,28 @@ impl<'a> Res for Variable {
 struct Fork {
     input: Box<Res>,
     output: Box<Res>,
-    name1: String,
-    name2: String
+    names: Vec<String>
 }
 
 impl Fork {
-    fn new<F>(input: Box<Res>, op: F) -> Fork
-        where F: FnOnce(Box<Res>, Box<Res>) -> Box<Res>
+    fn new<F>(input: Box<Res>, n: usize, op: F) -> Fork
+        where F: FnOnce(Vec<Box<Res>>) -> Box<Res>
     {
-        let name1 = format!("Fork<{}>[0]", input.name());
-        let name2 = format!("Fork<{}>[1]", input.name());
-        let in1 = Variable::new(name1.clone(), input.value().clone());
-        let in2 = Variable::new(name2.clone(), input.value().clone());
-        let output = op(Box::new(in1), Box::new(in2));
-        Fork{input: input, output: output, name1: name1, name2: name2}
+        let mut names = Vec::<String>::new();
+        let mut vars = Vec::<Box<Res>>::new();
+        for i in 0..n {
+            let name = format!("Fork<{}>[{}]", input.name(), i);
+            vars.push(Box::new(Variable::new(name.clone(), input.value().clone())));
+            names.push(name);
+        }
+        let output = op(vars);
+        Fork{input: input, output: output, names: names}
+    }
+
+    fn fork<F>(input: Box<Res>, n: usize, op: F) -> Box<Res>
+        where F: FnOnce(Vec<Box<Res>>) -> Box<Res>
+    {
+        Box::new(Fork::new(input, n, op))
     }
 }
 
@@ -218,15 +226,18 @@ impl Res for Fork {
 
     fn backward(&mut self, out_grad: &Tensor) -> Gradient {
         let mut grad = self.output.backward(out_grad);
-        let summed = match grad.0.remove(&self.name1) {
-            Some(grad1) => {
-                match grad.0.remove(&self.name2) {
-                    Some(grad2) => Some(&grad1 + &grad2),
-                    None => Some(grad1)
-                }
-            },
-            None => grad.0.remove(&self.name2)
-        };
+        let mut summed: Option<Tensor> = None;
+        for name in &self.names {
+            match grad.0.remove(name) {
+                Some(tensor) => {
+                    summed = Some(match summed {
+                        Some(tensor1) => &tensor + &tensor1,
+                        None => tensor
+                    });
+                },
+                None => ()
+            }
+        }
         match summed {
             Some(downstream) => grad.combine(self.input.backward(&downstream)),
             None => grad
