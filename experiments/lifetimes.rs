@@ -7,6 +7,9 @@
 // like we can put the mutable ref INSIDE the vector,
 // since the reference has the same lifetime as the vector
 // elements.
+//
+// TODO: see if this works with a non-generic type with an
+// explicit lifetime parameter.
 
 // Proving side-effects of the constraints:
 //
