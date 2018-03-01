@@ -27,3 +27,20 @@ Why does Box's contained type need to be 'static?
 When self is a &mut, why doesn't *self.b or *self.b.deref_mut() work when b is a Box<T>? self.b.as_mut() does work.
 
 Why can't we immutably borrow an object as part of constructing an argument for a mutable method on that object?
+
+What is the difference between `where` clauses and generic parameters?
+
+How do you return a struct that encapsulates a borrowed argument?
+Does f<'a>(&'a arg) -> MyStruct<'a> work?
+Is this normally inferred?
+
+How do Futures take ownership of your function argument to map()?
+Does this only work if your FnOnce doesn't use any local variables?
+Or, does it work as long as your Map<>'s lifetime is <= the lifetime of the most short-lived captured var?
+(https://docs.rs/futures/0.1.18/src/futures/future/map.rs.html#22-38)
+
+What happens if we try to put a Map<> into a Box<Future>?
+Does that make it 'static, and thus prevent our function from making any refs?
+
+Why do we have to explicitly state a lifetime for a struct if it has a reference field,
+but we don't have to if it's generic over any type (which might _be_ a reference)?
