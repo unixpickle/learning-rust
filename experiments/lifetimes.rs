@@ -30,6 +30,46 @@ fn make_ref<'a>(i: i32) -> RefOwner<'a> {
     return_ref_explicit(&UncopyableInt(i), &UncopyableInt(1337i32))
 }
 
+// This constrains both arguments to have the same lifetime.
+//
+// Struct<'a> lifetimes restrict 'a to be the exact lifetime
+// of the structure. This is different than for references,
+// where `&'a var` restricts 'a to be no longer than the
+// lifetime of var, but 'a may be shorter than the lifetime
+// of var.
+//
+// Logically, RefOwner<'a> cannot last longer than 'a,
+// because then it's field could become invalid.
+// It can't last less long than 'a, because it's field has
+// a lifetime of 'a as well, meaning that it's field is not
+// guaranteed to live past the struct.
+fn transfer_contents<'a>(a: &mut RefOwner<'a>, b: &mut RefOwner<'a>) {
+    b.0 = a.0;
+}
+
+fn use_transfer<'a>(i: i32) {
+    // Doesn't work because refA must live as long as
+    // refB, and vice versa.
+    //
+    //     let a = UncopyableInt(i);
+    //     let mut refA = RefOwner(&a);
+    //     {
+    //         let b = UncopyableInt(5i32);
+    //         let mut refB = RefOwner(&b);
+    //         transfer_contents(&mut refA, &mut refB);
+    //         println!("{}", (b.0));
+    //     }
+
+    // Works, because both ref_a and ref_b have static
+    // content lifetimes:
+    let mut ref_a = RefOwner(&UncopyableInt(2i32));
+    {
+        let mut ref_b = RefOwner(&UncopyableInt(5i32));
+        transfer_contents(&mut ref_a, &mut ref_b);
+        println!("{}", ((ref_b.0).0));
+    }
+}
+
 // Proving side-effects of the constraints:
 //
 //  - the lifetime of push's argument is 'a.
