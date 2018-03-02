@@ -1,15 +1,34 @@
 // Playing with lifetimes.
 //
-// Bottom line, I'm seeing some circular reasoning in the
-// lifetime system:
-// If we have Vec<&'a mut T>, and we have a mutable ref to
-// it of the form &'a mut Vec<&mut 'a T>, then it looks
-// like we can put the mutable ref INSIDE the vector,
-// since the reference has the same lifetime as the vector
-// elements.
-//
-// TODO: see if this works with a non-generic type with an
-// explicit lifetime parameter.
+// An observation: a reference to an object can have the
+// exact same lifetime constraint as that object.
+
+struct UncopyableInt(i32);
+
+struct RefOwner<'a>(&'a UncopyableInt);
+
+// No reason to specify lifetime; only one ref arg.
+fn return_ref(x: &UncopyableInt) -> RefOwner {
+    RefOwner(x)
+}
+
+// Doesn't compile without lifetime parameters.
+fn return_ref_explicit<'a, 'b>(_: &'a UncopyableInt, y: &'b UncopyableInt) -> RefOwner<'b> {
+    RefOwner(y)
+}
+
+// Doesn't compile without lifetime parameters, since
+// there's no argument to borrow from.
+// We could also return `RefOwner<'static>`.
+fn make_ref<'a>(i: i32) -> RefOwner<'a> {
+    // Does not work, since not static:
+    // RefOwner(&UncopyableInt(i))
+
+    // Works, because the UncopyableInt is 'static:
+    // RefOwner(&UncopyableInt(1337i32))
+
+    return_ref_explicit(&UncopyableInt(i), &UncopyableInt(1337i32))
+}
 
 // Proving side-effects of the constraints:
 //
@@ -54,6 +73,18 @@ fn get_first<'a>(input: &'a i32, _: &'a i32) -> &'a i32 {
 }
 
 fn main() {
+    let x: RefOwner;
+    {
+        // Doesn't work, because y is on the stack:
+        // let y = UncopyableInt(5i32);
+        // x = return_ref(&y);
+
+        // Works, because the UncopyableInt is static:
+        x = return_ref(&UncopyableInt(1337i32));
+    }
+    println!("from inside scope: {:?}", (x.0).0);
+    println!("from inside function: {:?}", (make_ref((x.0).0).0).0);
+
     let mut value = 4i32;
     {
         let mut vec = Vec::<&i32>::new();

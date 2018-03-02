@@ -23,16 +23,23 @@ How does moving_method.rs work when Vec doesn't implement Copy, only Clone? Is i
 -> all refs implement Copy/Clone, as show in refs_copyable.rs.
 
 Why does Box's contained type need to be 'static?
+-> For one, because there's a leak() method. In general, doesn't make sense to have pointer to stack variable on the heap.
 
 When self is a &mut, why doesn't *self.b or *self.b.deref_mut() work when b is a Box<T>? self.b.as_mut() does work.
+-> See weird_deref.rs.
+-> deref_mut didn't work because of a missing import.
+-> *self.b doesn't work because a deref refers to the non-reference type. Need &mut *self.b.
 
 Why can't we immutably borrow an object as part of constructing an argument for a mutable method on that object?
 
 What is the difference between `where` clauses and generic parameters?
+-> https://rustbyexample.com/generics/where.html
 
 How do you return a struct that encapsulates a borrowed argument?
 Does f<'a>(&'a arg) -> MyStruct<'a> work?
+-> yes
 Is this normally inferred?
+-> yes, see lifetimes.rs. If there's one ref arg, inference takes places.
 
 How do Futures take ownership of your function argument to map()?
 Does this only work if your FnOnce doesn't use any local variables?
@@ -44,3 +51,5 @@ Does that make it 'static, and thus prevent our function from making any refs?
 
 Why do we have to explicitly state a lifetime for a struct if it has a reference field,
 but we don't have to if it's generic over any type (which might _be_ a reference)?
+-> If you use a reference as a generic argument, then you may need to specify the lifetime.
+   For example, Vec<&'a i32>.
