@@ -53,3 +53,5 @@ Why do we have to explicitly state a lifetime for a struct if it has a reference
 but we don't have to if it's generic over any type (which might _be_ a reference)?
 -> If you use a reference as a generic argument, then you may need to specify the lifetime.
    For example, Vec<&'a i32>.
+
+How do Rc and Weak work, and how are they used?
