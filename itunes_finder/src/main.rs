@@ -12,6 +12,7 @@ extern crate hyper;
 extern crate tokio_core;
 extern crate xml;
 
+use std::collections::HashSet;
 use std::io::{Cursor};
 
 use futures::{Future, Stream};
@@ -21,13 +22,39 @@ use xml::reader::{EventReader, XmlEvent};
 
 // TODO: figure out why HTTPS didn't work here.
 static SEARCH_PAGE: &str = "http://search.itunes.apple.com/WebObjects/MZSearchHints.woa/wa/hints?media=music&term=";
+static SEARCH_CHARS: &str = "abcdefghijklmnopqrstuvwxyz ";
+const MAX_RESULT_COUNT: usize = 50;
 
 fn main() {
     let mut core = Core::new().expect("Failed to create reactor core.");
     let client = Client::new(&core.handle());
 
-    let xml = query_result_xml(&mut core, &client, "poop").expect("uhoh");
-    println!("foo: {:?}", parse_result_xml(xml).expect("oh no!");
+    search(&mut core, &client, &mut HashSet::new(), "");
+}
+
+fn search<T>(core: &mut Core, client: &Client<T>, seen: &mut HashSet<String>, prefix: &str)
+    where T: hyper::client::Connect
+{
+    if prefix.len() > 0 {
+        let raw_xml = query_result_xml(core, client, prefix).expect("Fetch failed.");
+        let results = parse_result_xml(raw_xml).expect("Parse failed.");
+        let len = results.len();
+        for result in results {
+            if !seen.contains(&result) {
+                println!("{}", result);
+                seen.insert(result);
+            }
+        }
+        if len < MAX_RESULT_COUNT {
+            return
+        }
+    }
+    for ch in SEARCH_CHARS.chars() {
+        if ch == ' ' && prefix.ends_with(" ") {
+            continue;
+        }
+        search(core, client, seen, &format!("{}{}", prefix, ch));
+    }
 }
 
 fn parse_result_xml(raw: String) -> Result<Vec<String>, xml::reader::Error> {
