@@ -1,6 +1,6 @@
 /// https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life
 ///
-/// Stepping takes about 120 nanoseconds per cell on my
+/// Stepping takes about 24 nanoseconds per cell on my
 /// somewhat slow laptop.
 
 use std::fmt::{Display, Formatter, Error};
@@ -22,15 +22,28 @@ impl Board {
     }
 
     fn count_neighbors(&self, row: usize, col: usize) -> usize {
-        let additions = [0, 1, self.size - 1];
         let mut count = 0usize;
-        for i in &additions {
-            for j in &additions {
-                if *i == 0 && *j == 0 {
-                    continue
+        if row > 0 && row + 1 < self.size && col > 0 && col + 1 < self.size {
+            for i in &[row - 1, row, row + 1] {
+                for j in &[col - 1, col, col + 1] {
+                    if *i == row && *j == col {
+                        continue
+                    }
+                    if self[(*i, *j)] {
+                        count += 1;
+                    }
                 }
-                if self[((row + *i) % self.size, (col + *j) % self.size)] {
-                    count += 1;
+            }
+        } else {
+            let additions = [0, 1, self.size - 1];
+            for i in &additions {
+                for j in &additions {
+                    if *i == 0 && *j == 0 {
+                        continue
+                    }
+                    if self[((row + *i) % self.size, (col + *j) % self.size)] {
+                        count += 1;
+                    }
                 }
             }
         }
