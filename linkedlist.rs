@@ -65,6 +65,47 @@ impl<T> LinkedList<T> {
             }
         }
     }
+
+    fn push(&mut self, item: T) {
+        let new_tail = Rc::new(RefCell::new(Node{
+            data: Some(item),
+            prev: None,
+            next: None,
+        }));
+        match take(&mut self.tail) {
+            Some(old_tail_weak) => {
+                let old_tail = old_tail_weak.upgrade().unwrap();
+                new_tail.borrow_mut().prev = Some(Rc::downgrade(&old_tail));
+                self.tail = Some(Rc::downgrade(&new_tail));
+                old_tail.borrow_mut().next = Some(new_tail);
+            },
+            None => {
+                self.tail = Some(Rc::downgrade(&new_tail));
+                self.head = Some(new_tail);
+            }
+        }
+    }
+
+    fn pop(&mut self) -> Option<T> {
+        match take(&mut self.tail) {
+            Some(old_tail_weak) => {
+                let old_tail_strong = old_tail_weak.upgrade().unwrap();
+                let mut old_tail = old_tail_strong.borrow_mut();
+                match take(&mut old_tail.prev) {
+                    Some(new_tail_weak) => {
+                        let new_tail = new_tail_weak.upgrade().unwrap();
+                        new_tail.borrow_mut().next = None;
+                        self.tail = Some(Rc::downgrade(&new_tail));
+                    },
+                    None => {
+                        self.head = None;
+                    },
+                }
+                take(&mut old_tail.data)
+            },
+            None => None,
+        }
+    }
 }
 
 fn main() {
@@ -73,9 +114,23 @@ fn main() {
         ll.unshift(i);
     }
     loop {
+        match ll.pop() {
+            Some(x) => {
+                println!("popped: {}", x);
+            },
+            None => {
+                break;
+            },
+        };
+    }
+
+    for i in 10..20 {
+        ll.push(i)
+    }
+    loop {
         match ll.shift() {
             Some(x) => {
-                println!("hello: {}", x);
+                println!("shifted: {}", x);
             },
             None => {
                 break;
