@@ -2,6 +2,7 @@
 // weak references, refcells, etc.
 
 use std::cell::{RefCell};
+use std::collections::{VecDeque};
 use std::mem::{take};
 use std::rc::{Weak, Rc};
 
@@ -26,7 +27,7 @@ impl<T> LinkedList<T> {
         LinkedList{head: None, tail: None}
     }
 
-    fn unshift(&mut self, item: T) {
+    fn push_front(&mut self, item: T) {
         let new_head = Rc::new(RefCell::new(Node{
             data: Some(item),
             prev: None,
@@ -45,7 +46,7 @@ impl<T> LinkedList<T> {
         }
     }
 
-    fn shift(&mut self) -> Option<T> {
+    fn pop_front(&mut self) -> Option<T> {
         match take(&mut self.head) {
             Some(old_head) => {
                 let mut obj = old_head.borrow_mut();
@@ -66,7 +67,7 @@ impl<T> LinkedList<T> {
         }
     }
 
-    fn push(&mut self, item: T) {
+    fn push_back(&mut self, item: T) {
         let new_tail = Rc::new(RefCell::new(Node{
             data: Some(item),
             prev: None,
@@ -86,7 +87,7 @@ impl<T> LinkedList<T> {
         }
     }
 
-    fn pop(&mut self) -> Option<T> {
+    fn pop_back(&mut self) -> Option<T> {
         match take(&mut self.tail) {
             Some(old_tail_weak) => {
                 let old_tail_strong = old_tail_weak.upgrade().unwrap();
@@ -108,33 +109,41 @@ impl<T> LinkedList<T> {
     }
 }
 
-fn main() {
-    let mut ll = LinkedList::<i32>::new();
+fn check_equivalent() {
     for i in 0..10 {
-        ll.unshift(i);
+        let mut ll = LinkedList::<i32>::new();
+        let mut deque = VecDeque::<i32>::new();
+        for j in 0..1000 {
+            // Pseudo-randomly decide what to do, with more
+            // weight put on insertion than deletion.
+            let op = ((j + i*1000) * 5573) % 6;
+            if op < 4 {
+                // Insertion.
+                let n = (j + i*1000) * 3613;
+                if op < 2 {
+                    ll.push_back(n);
+                    deque.push_back(n);
+                } else {
+                    ll.push_front(n);
+                    deque.push_front(n);
+                }
+            } else {
+                // Deletion.
+                if op == 4 {
+                    let actual = ll.pop_back();
+                    let expected = deque.pop_back();
+                    assert_eq!(actual, expected);
+                } else {
+                    let actual = ll.pop_front();
+                    let expected = deque.pop_front();
+                    assert_eq!(actual, expected);
+                }
+            }
+        }
     }
-    loop {
-        match ll.pop() {
-            Some(x) => {
-                println!("popped: {}", x);
-            },
-            None => {
-                break;
-            },
-        };
-    }
+    println!("equivalence tests passed!")
+}
 
-    for i in 10..20 {
-        ll.push(i)
-    }
-    loop {
-        match ll.shift() {
-            Some(x) => {
-                println!("shifted: {}", x);
-            },
-            None => {
-                break;
-            },
-        };
-    }
+fn main() {
+    check_equivalent();
 }
