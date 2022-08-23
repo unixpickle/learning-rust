@@ -109,17 +109,43 @@ impl<T> LinkedList<T> {
     }
 }
 
+struct GarbageCounter {
+    count: Rc<RefCell<usize>>,
+}
+
+impl GarbageCounter {
+    fn new() -> Self {
+        GarbageCounter{count: Rc::new(RefCell::new(1))}
+    }
+
+    fn get(&self) -> usize {
+        *self.count.borrow()
+    }
+}
+
+impl Drop for GarbageCounter {
+    fn drop(&mut self) {
+        *self.count.borrow_mut() -= 1;
+    }
+}
+
+impl Clone for GarbageCounter {
+    fn clone(&self) -> Self {
+        *self.count.borrow_mut() += 1;
+        GarbageCounter{count: self.count.clone()}
+    }
+}
+
 fn check_equivalent() {
     for i in 0..10 {
         let mut ll = LinkedList::<i32>::new();
         let mut deque = VecDeque::<i32>::new();
-        for j in 0..1000 {
+        for (j, op) in random_sequence(1000, 6).into_iter().enumerate() {
             // Pseudo-randomly decide what to do, with more
             // weight put on insertion than deletion.
-            let op = ((j + i*1000) * 5573) % 6;
             if op < 4 {
                 // Insertion.
-                let n = (j + i*1000) * 3613;
+                let n = ((j as i32) + i*1000) * 3613;
                 if op < 2 {
                     ll.push_back(n);
                     deque.push_back(n);
@@ -144,6 +170,49 @@ fn check_equivalent() {
     println!("equivalence tests passed!")
 }
 
+fn check_cleaned_up() {
+    let gc = GarbageCounter::new();
+    for _ in 0..10 {
+        assert_eq!(gc.get(), 1);
+        let mut ll = LinkedList::<GarbageCounter>::new();
+        for op in random_sequence(1000, 4) {
+            if op < 2 {
+                // Insertion.
+                if op == 0 {
+                    ll.push_back(gc.clone());
+                } else {
+                    ll.push_front(gc.clone());
+                }
+                assert!(gc.get() > 1);
+            } else {
+                // Deletion.
+                let res = if op == 2 {
+                    ll.pop_back()
+                } else {
+                    ll.pop_front()
+                };
+                if res.is_none() {
+                    assert_eq!(gc.get(), 1);
+                } else {
+                    assert!(gc.get() > 1);
+                }
+            }
+        }
+    }
+    println!("ownership tests passed!");
+}
+
+fn random_sequence(count: i32, max: i32) -> Vec<i32> {
+    let mut n = 1;
+    let mut res = Vec::new();
+    for _ in 0..count {
+        n = (n*5573 + 1921) % (max * 100);
+        res.push(n / 100);
+    }
+    res
+}
+
 fn main() {
     check_equivalent();
+    check_cleaned_up();
 }
