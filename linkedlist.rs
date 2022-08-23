@@ -174,6 +174,7 @@ fn check_cleaned_up() {
     let gc = GarbageCounter::new();
     for _ in 0..10 {
         assert_eq!(gc.get(), 1);
+        let mut count = 0;
         let mut ll = LinkedList::<GarbageCounter>::new();
         for op in random_sequence(1000, 4) {
             if op < 2 {
@@ -183,19 +184,19 @@ fn check_cleaned_up() {
                 } else {
                     ll.push_front(gc.clone());
                 }
-                assert!(gc.get() > 1);
+                count += 1;
+                assert_eq!(gc.get(), count + 1);
             } else {
                 // Deletion.
-                let res = if op == 2 {
-                    ll.pop_back()
+                if op == 2 {
+                    ll.pop_back();
                 } else {
-                    ll.pop_front()
+                    ll.pop_front();
                 };
-                if res.is_none() {
-                    assert_eq!(gc.get(), 1);
-                } else {
-                    assert!(gc.get() > 1);
+                if count > 0 {
+                    count -= 1;
                 }
+                assert_eq!(gc.get(), count + 1);
             }
         }
     }
