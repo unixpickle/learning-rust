@@ -14,9 +14,8 @@ async fn main() -> ExitCode {
     }
 
     let addr = SocketAddr::from(([0, 0, 0, 0], args[1].parse().unwrap()));
-    let destination_url = args[2].clone();
     let make_service = make_service_fn(move |_conn| {
-        let d_url = destination_url.clone();
+        let d_url = args[2].clone();
         async move {
             Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
                 forward_request(req, d_url.clone())
