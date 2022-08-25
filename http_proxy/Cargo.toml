@@ -1,0 +1,10 @@
+[package]
+edition = "2021"
+name = "http_proxy"
+description = "Proxy HTTP requests and log them."
+version = "0.1.0"
+authors = ["Alex Nichol <unixpickle@gmail.com>"]
+
+[dependencies]
+hyper = { version="0.14.20", features=["full"] }
+tokio = { version = "1.20.1", features=["full"] }
