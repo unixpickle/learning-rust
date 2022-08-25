@@ -9,7 +9,7 @@ use std::process::ExitCode;
 async fn main() -> ExitCode {
     let args = Vec::from_iter(args());
     if args.len() != 3 {
-        println!("Usage: {} <listen_port> <destination_url>", args[0]);
+        eprintln!("Usage: {} <listen_port> <destination_url>", args[0]);
         return ExitCode::from(1);
     }
 
