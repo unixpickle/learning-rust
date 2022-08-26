@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use hyper::{Body, Request, Response, Server};
+use hyper::{Body, Request, Response, Server, Uri};
+use hyper::client::Client;
 use hyper::service::{make_service_fn, service_fn};
 use std::env::args;
 use std::process::ExitCode;
@@ -32,5 +33,18 @@ async fn main() -> ExitCode {
 }
 
 async fn forward_request<'a>(req: Request<Body>, destination_url: String) -> Result<Response<Body>, Infallible> {
-    Ok(Response::new(Body::from(destination_url)))
+    let destination_uri = destination_url.parse::<Uri>().unwrap();
+    let source_uri = req.uri().clone();
+    let forward_uri = Uri::builder()
+        .scheme(destination_uri.scheme().unwrap().clone())
+        .authority(destination_uri.authority().unwrap().clone())
+        .path_and_query(source_uri.path_and_query().unwrap().clone())
+        .build()
+        .unwrap();
+
+    let client = Client::new();
+    match client.get(forward_uri).await {
+        Ok(value) => Ok(value),
+        _ => Ok(Response::new(Body::from("got error"))),
+    }
 }
