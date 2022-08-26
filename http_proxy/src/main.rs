@@ -45,6 +45,6 @@ async fn forward_request<'a>(req: Request<Body>, destination_url: String) -> Res
     let client = Client::new();
     match client.get(forward_uri).await {
         Ok(value) => Ok(value),
-        _ => Ok(Response::new(Body::from("got error"))),
+        Err(err) => Ok(Response::new(Body::from(format!("{}", err)))),
     }
 }
