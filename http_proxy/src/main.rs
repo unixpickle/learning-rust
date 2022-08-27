@@ -1,4 +1,4 @@
-use hyper::client::Client;
+use hyper::client::{Client, HttpConnector};
 use hyper::header::CONTENT_TYPE;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, Uri};
@@ -8,6 +8,7 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::net::SocketAddr;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -17,12 +18,14 @@ async fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
+    let client = Arc::new(Client::new());
     let addr = SocketAddr::from(([0, 0, 0, 0], args[1].parse().unwrap()));
     let make_service = make_service_fn(move |_conn| {
         let d_url = args[2].clone();
+        let client_clone = client.clone();
         async move {
             Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                forward_request(req, d_url.clone())
+                forward_request(req, d_url.clone(), client_clone.clone())
             }))
         }
     });
@@ -38,8 +41,9 @@ async fn main() -> ExitCode {
 async fn forward_request(
     req: Request<Body>,
     destination_url: String,
+    client: Arc<Client<HttpConnector>>,
 ) -> Result<Response<Body>, Infallible> {
-    match forward_request_or_fail(req, destination_url).await {
+    match forward_request_or_fail(req, destination_url, client).await {
         Ok(res) => Ok(res),
         Err(err) => Ok(Response::new(Body::from(format!("{}", err)))),
     }
@@ -48,6 +52,7 @@ async fn forward_request(
 async fn forward_request_or_fail(
     req: Request<Body>,
     destination_url: String,
+    client: Arc<Client<HttpConnector>>,
 ) -> Result<Response<Body>, GenericError> {
     let destination_uri = destination_url.parse::<Uri>()?;
     let source_uri = req.uri().clone();
@@ -56,8 +61,6 @@ async fn forward_request_or_fail(
         .authority(destination_uri.authority().unwrap().clone())
         .path_and_query(source_uri.path_and_query().unwrap().clone())
         .build()?;
-
-    let client = Client::new();
 
     let mut builder = Request::builder()
         .method(req.method().clone())
