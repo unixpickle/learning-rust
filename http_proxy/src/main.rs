@@ -62,6 +62,8 @@ async fn forward_request_or_fail(
         .path_and_query(source_uri.path_and_query().unwrap().clone())
         .build()?;
 
+    println!("request for {} => {}", source_uri, forward_uri);
+
     let mut builder = Request::builder()
         .method(req.method().clone())
         .uri(forward_uri);
