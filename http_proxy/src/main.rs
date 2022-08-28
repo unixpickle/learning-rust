@@ -71,6 +71,13 @@ async fn forward_request_or_fail(
     client: Arc<Client<HttpConnector>>,
     logger: Arc<Mutex<RequestLogger>>,
 ) -> Result<Response<Body>, GenericError> {
+    if req.uri().path() == "/robots.txt" {
+        logger.lock().unwrap().log_robots(&req);
+        return Ok(Response::new(Body::from(
+            "User-agent: *\r\nDisallow: /\r\n",
+        )));
+    }
+
     let destination_uri = destination_url.parse::<Uri>()?;
     let source_uri = req.uri().clone();
     let forward_uri = Uri::builder()
@@ -126,20 +133,33 @@ impl RequestLogger {
         }
     }
 
+    fn log_robots(&mut self, req: &Request<Body>) {
+        println!(
+            "{} {} => built-in response (headers: {})",
+            req.method(),
+            req.uri(),
+            RequestLogger::format_headers(req)
+        )
+    }
+
     fn log_request(&mut self, req: &Request<Body>, forward_uri: &Uri) {
+        println!(
+            "{} {} => {} (headers: {})",
+            req.method(),
+            req.uri(),
+            forward_uri,
+            RequestLogger::format_headers(req),
+        )
+    }
+
+    fn format_headers(req: &Request<Body>) -> String {
         let mut header_strs = Vec::<String>::new();
         for (name, value) in req.headers() {
             if let Ok(value_str) = std::str::from_utf8(value.as_bytes()) {
                 header_strs.push(format!("{}={}", name, value_str));
             }
         }
-        println!(
-            "{} {} => {} (headers: {})",
-            req.method(),
-            req.uri(),
-            forward_uri,
-            header_strs.join(" "),
-        )
+        header_strs.join(" ")
     }
 
     fn log_body_ended(&mut self, is_request: bool) {
