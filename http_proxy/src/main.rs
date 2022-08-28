@@ -1,3 +1,5 @@
+use futures_core::stream::Stream;
+use hyper::body::Bytes;
 use hyper::client::{Client, HttpConnector};
 use hyper::header::CONTENT_TYPE;
 use hyper::service::{make_service_fn, service_fn};
@@ -7,8 +9,10 @@ use std::env::args;
 use std::error::Error as StdError;
 use std::fmt;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -85,9 +89,9 @@ async fn forward_request_or_fail(
         builder = builder.header(CONTENT_TYPE, content_type)
     }
 
-    let new_req = builder.body(req.into_body())?;
+    let new_req = builder.body(logging_body(req.into_body(), logger.clone(), true))?;
     let response = client.request(new_req).await?;
-    Ok(response)
+    Ok(response.map(|body| logging_body(body, logger, false)))
 }
 
 #[derive(Debug, Clone)]
@@ -109,11 +113,17 @@ impl<E: StdError> From<E> for GenericError {
     }
 }
 
-struct RequestLogger;
+struct RequestLogger {
+    request_bytes: i64,
+    response_bytes: i64,
+}
 
 impl RequestLogger {
     fn new() -> RequestLogger {
-        RequestLogger {}
+        RequestLogger {
+            request_bytes: 0,
+            response_bytes: 0,
+        }
     }
 
     fn log_request(&mut self, req: &Request<Body>, forward_uri: &Uri) {
@@ -131,4 +141,72 @@ impl RequestLogger {
             header_strs.join(" "),
         )
     }
+
+    fn log_body_ended(&mut self, is_request: bool) {
+        if is_request {
+            println!("-  total request bytes: {}", self.request_bytes);
+        } else {
+            println!("- total response bytes: {}", self.response_bytes);
+        }
+    }
+}
+
+struct LoggingStream<S: Stream<Item = hyper::Result<Bytes>>> {
+    wrapped: S,
+    logger: Arc<Mutex<RequestLogger>>,
+    is_request: bool,
+}
+
+impl<S: Stream<Item = hyper::Result<Bytes>>> LoggingStream<S> {
+    fn get_wrapped(self: Pin<&mut Self>) -> Pin<&mut S> {
+        // Using the "Pinning is structural for field" pattern as describe in:
+        // https://doc.rust-lang.org/std/pin/index.html#structs.
+        //
+        // This requires that our struct is not packed, among other restrictions
+        // in how the struct is implemented.
+        unsafe { self.map_unchecked_mut(|s| &mut s.wrapped) }
+    }
+}
+
+impl<S: Stream<Item = hyper::Result<Bytes>>> Stream for LoggingStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let res = self.as_mut().get_wrapped().poll_next(cx);
+        match res {
+            Poll::Ready(Some(Ok(data))) => {
+                let size = data.len() as i64;
+                let mut logger = self.logger.lock().unwrap();
+                if self.is_request {
+                    logger.request_bytes += size;
+                } else {
+                    logger.response_bytes += size;
+                }
+                Poll::Ready(Some(Ok(data)))
+            }
+            x => x,
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        return self.wrapped.size_hint();
+    }
+}
+
+impl<S: Stream<Item = hyper::Result<Bytes>>> Drop for LoggingStream<S> {
+    fn drop(&mut self) {
+        inner_drop(unsafe { Pin::new_unchecked(self) });
+        fn inner_drop<S: Stream<Item = hyper::Result<Bytes>>>(this: Pin<&mut LoggingStream<S>>) {
+            let is_req = this.is_request;
+            this.logger.lock().unwrap().log_body_ended(is_req);
+        }
+    }
+}
+
+fn logging_body(wrapped: Body, logger: Arc<Mutex<RequestLogger>>, is_request: bool) -> Body {
+    Body::wrap_stream(LoggingStream {
+        wrapped,
+        logger,
+        is_request,
+    })
 }
