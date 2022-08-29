@@ -172,19 +172,18 @@ impl RequestLogger {
 }
 
 struct LoggingStream<S: Stream<Item = hyper::Result<Bytes>>> {
-    wrapped: S,
+    wrapped: Pin<Box<S>>,
     logger: Arc<Mutex<RequestLogger>>,
     is_request: bool,
 }
 
 impl<S: Stream<Item = hyper::Result<Bytes>>> LoggingStream<S> {
-    fn get_wrapped(self: Pin<&mut Self>) -> Pin<&mut S> {
-        // Using the "Pinning is structural for field" pattern as describe in:
-        // https://doc.rust-lang.org/std/pin/index.html#structs.
-        //
-        // This requires that our struct is not packed, among other restrictions
-        // in how the struct is implemented.
-        unsafe { self.map_unchecked_mut(|s| &mut s.wrapped) }
+    fn new(stream: S, logger: Arc<Mutex<RequestLogger>>, is_request: bool) -> Self {
+        LoggingStream {
+            wrapped: Box::pin(stream),
+            logger,
+            is_request,
+        }
     }
 }
 
@@ -192,7 +191,7 @@ impl<S: Stream<Item = hyper::Result<Bytes>>> Stream for LoggingStream<S> {
     type Item = S::Item;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let res = self.as_mut().get_wrapped().poll_next(cx);
+        let res = self.wrapped.as_mut().poll_next(cx);
         match res {
             Poll::Ready(Some(Ok(data))) => {
                 let size = data.len() as i64;
@@ -224,9 +223,5 @@ impl<S: Stream<Item = hyper::Result<Bytes>>> Drop for LoggingStream<S> {
 }
 
 fn logging_body(wrapped: Body, logger: Arc<Mutex<RequestLogger>>, is_request: bool) -> Body {
-    Body::wrap_stream(LoggingStream {
-        wrapped,
-        logger,
-        is_request,
-    })
+    Body::wrap_stream(LoggingStream::new(wrapped, logger, is_request))
 }
