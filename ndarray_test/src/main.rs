@@ -1,10 +1,11 @@
 use ndarray::{Array, Dimension, IntoDimension, Ix2};
 use num_traits::identities::Zero;
-use std::ops::Mul;
+use std::ops::{Add, Mul};
 fn main() {
     let arr = Array::<f32, Ix2>::from_shape_vec((2, 3), vec![1., 2., 3., 4., 5., 6.]).unwrap();
     println!("{}", arr);
-    println!("outer {}", outer_products_naive(arr));
+    println!("naive {}", outer_products_naive(arr.clone()));
+    println!("naive {}", outer_products_faster(arr.clone()));
 }
 
 // Attempt to make a function that computes the outer product of every vector
@@ -38,4 +39,33 @@ fn outer_products_naive<A: Clone + Zero + Copy + Mul<Output = A>, D: Dimension>(
         }
     }
     res
+}
+
+fn outer_products_faster<A: Clone + Zero + Copy + Mul + Add, D: Dimension>(
+    a: Array<A, D>,
+) -> Array<A, D::Larger> {
+    let mut outer_size: usize = 1;
+    let shape_in = a.shape().clone(); // clone since a is consumed later.
+    for i in &shape_in[0..shape_in.len() - 1] {
+        outer_size *= i;
+    }
+    let inner_size = shape_in[shape_in.len() - 1];
+
+    let mut flat_out = Array::<A, Ix2>::zeros((outer_size, inner_size * inner_size));
+    for (src, mut dst) in Iterator::zip(a.genrows().into_iter(), flat_out.genrows_mut().into_iter())
+    {
+        let src_copy = src.map(|x| *x);
+        let v = src_copy.clone().into_shape((inner_size, 1)).unwrap();
+        let vT = v.clone().reversed_axes();
+        let outer_product = v.dot(&vT);
+        // This fails to compile for some reason.
+        dst.assign(&outer_product);
+    }
+
+    let mut out_shape = <D as Dimension>::Larger::zeros(shape_in.len() + 1);
+    for (i, x) in shape_in.into_iter().enumerate() {
+        out_shape.as_array_view_mut()[i] = *x;
+    }
+    out_shape[shape_in.len()] = inner_size;
+    flat_out.into_shape(out_shape).unwrap()
 }
