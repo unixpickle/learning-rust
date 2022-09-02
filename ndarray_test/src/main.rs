@@ -1,20 +1,30 @@
-use ndarray::{Array, Dimension, IntoDimension, Ix2, Ix3, LinalgScalar};
-use num_traits::identities::Zero;
-use std::ops::Mul;
+use ndarray::{Array, Dimension, IntoDimension, Ix3, Ix4, LinalgScalar};
+use ndarray_rand::rand_distr::Uniform;
+use ndarray_rand::RandomExt;
+use std::time::Instant;
 
 fn main() {
-    let arr = Array::<f32, Ix2>::from_shape_vec((2, 3), vec![1., 2., 3., 4., 5., 6.]).unwrap();
-    println!("input array: {}", arr);
-    println!("naive {}", outer_products_naive(arr.clone()));
-    println!("faster {}", outer_products_faster(arr.clone()));
+    let arr = Array::<f32, Ix4>::random((8, 3, 6, 128), Uniform::new(-1., 1.));
+    println!("input array mean: {:.5}", arr.mean().unwrap());
+    let t1 = Instant::now();
+    let naive_out = outer_products_naive(&arr);
+    let t2 = Instant::now();
+    let fast_out = outer_products_faster(&arr);
+    let t3 = Instant::now();
+    println!("naive method took {:.5} seconds", (t2 - t1).as_secs_f64());
+    println!("fast method took {:.5} seconds", (t3 - t2).as_secs_f64());
+
+    let diff = naive_out - fast_out;
+    println!(
+        "mean abs error: {:.5}",
+        diff.map(|x| x.abs()).mean().unwrap()
+    );
 }
 
 // Attempt to make a function that computes the outer product of every vector
 // at the last dimension of an N-dimensional array.
 // For example, an X x Y x Z tensor would result in an X x Y x Z x Z tensor.
-fn outer_products_naive<A: Clone + Zero + Copy + Mul<Output = A>, D: Dimension>(
-    a: Array<A, D>,
-) -> Array<A, D::Larger> {
+fn outer_products_naive<A: LinalgScalar, D: Dimension>(a: &Array<A, D>) -> Array<A, D::Larger> {
     let raw_dim = a.raw_dim();
     let mut shape = D::Larger::zeros(raw_dim.ndim() + 1);
 
@@ -42,7 +52,7 @@ fn outer_products_naive<A: Clone + Zero + Copy + Mul<Output = A>, D: Dimension>(
     res
 }
 
-fn outer_products_faster<A: LinalgScalar, D: Dimension>(a: Array<A, D>) -> Array<A, D::Larger> {
+fn outer_products_faster<A: LinalgScalar, D: Dimension>(a: &Array<A, D>) -> Array<A, D::Larger> {
     let mut outer_size: usize = 1;
     let shape_in = a.shape().clone(); // clone since a is consumed later.
     for i in &shape_in[0..shape_in.len() - 1] {
@@ -51,10 +61,8 @@ fn outer_products_faster<A: LinalgScalar, D: Dimension>(a: Array<A, D>) -> Array
     let inner_size = shape_in[shape_in.len() - 1];
 
     let mut flat_out = Array::<A, Ix3>::zeros((outer_size, inner_size, inner_size));
-    for (src, mut dst) in Iterator::zip(
-        a.genrows().into_iter(),
-        flat_out.outer_iter_mut().into_iter(),
-    ) {
+    for (src, mut dst) in Iterator::zip(a.rows().into_iter(), flat_out.outer_iter_mut().into_iter())
+    {
         let v = src.clone().into_shape((inner_size, 1)).unwrap();
         let v_t = v.clone().reversed_axes();
         dst.assign(&v.dot(&v_t));
