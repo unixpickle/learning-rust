@@ -14,10 +14,12 @@ use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
-    /// Optional name to operate on
+    #[clap(short, long, value_parser)]
+    robots: bool,
+
     #[clap(value_parser)]
     port: u16,
 
@@ -36,14 +38,14 @@ async fn main() -> ExitCode {
     let client = Arc::new(Client::new());
     let logger = Arc::new(Mutex::new(RequestLogger::new()));
     let make_service = make_service_fn(move |_conn| {
-        let d_url = cli.destination_url.clone();
+        let flags = cli.clone();
         let client_clone = client.clone();
         let logger_clone = logger.clone();
         async move {
             Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
                 forward_request(
                     req,
-                    d_url.clone(),
+                    flags.clone(),
                     client_clone.clone(),
                     logger_clone.clone(),
                 )
@@ -62,11 +64,11 @@ async fn main() -> ExitCode {
 
 async fn forward_request(
     req: Request<Body>,
-    destination_url: String,
+    flags: Cli,
     client: Arc<Client<HttpConnector>>,
     logger: Arc<Mutex<RequestLogger>>,
 ) -> Result<Response<Body>, Infallible> {
-    match forward_request_or_fail(req, destination_url, client, logger).await {
+    match forward_request_or_fail(req, flags, client, logger).await {
         Ok(res) => Ok(res),
         Err(err) => Ok(Response::new(Body::from(format!("{}", err)))),
     }
@@ -74,18 +76,18 @@ async fn forward_request(
 
 async fn forward_request_or_fail(
     req: Request<Body>,
-    destination_url: String,
+    flags: Cli,
     client: Arc<Client<HttpConnector>>,
     logger: Arc<Mutex<RequestLogger>>,
 ) -> Result<Response<Body>, GenericError> {
-    if req.uri().path() == "/robots.txt" {
+    if flags.robots && req.uri().path() == "/robots.txt" {
         logger.lock().unwrap().log_robots(&req);
         return Ok(Response::new(Body::from(
             "User-agent: *\r\nDisallow: /\r\n",
         )));
     }
 
-    let destination_uri = destination_url.parse::<Uri>()?;
+    let destination_uri = flags.destination_url.parse::<Uri>()?;
     let source_uri = req.uri().clone();
     let forward_uri = Uri::builder()
         .scheme(destination_uri.scheme().unwrap().clone())
