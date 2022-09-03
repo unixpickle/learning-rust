@@ -20,6 +20,9 @@ struct Cli {
     #[clap(short, long, value_parser)]
     robots: bool,
 
+    #[clap(short, long, value_parser)]
+    stats_page: bool,
+
     #[clap(value_parser)]
     port: u16,
 
@@ -85,6 +88,13 @@ async fn forward_request_or_fail(
         return Ok(Response::new(Body::from(
             "User-agent: *\r\nDisallow: /\r\n",
         )));
+    }
+    if flags.stats_page && req.uri().path() == "/stats.txt" {
+        let info = logger.lock().unwrap();
+        return Ok(Response::new(Body::from(format!(
+            "req bytes: {}\r\nresp bytes: {}\r\n",
+            info.request_bytes, info.response_bytes
+        ))));
     }
 
     let destination_uri = flags.destination_url.parse::<Uri>()?;
