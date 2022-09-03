@@ -1,3 +1,4 @@
+use clap::Parser;
 use futures_core::stream::Stream;
 use hyper::body::Bytes;
 use hyper::client::{Client, HttpConnector};
@@ -5,7 +6,6 @@ use hyper::header::CONTENT_TYPE;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, Uri};
 use std::convert::Infallible;
-use std::env::args;
 use std::error::Error as StdError;
 use std::fmt;
 use std::net::SocketAddr;
@@ -14,22 +14,29 @@ use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
+#[derive(Parser)]
+#[clap(author, version, about, long_about = None)]
+struct Cli {
+    /// Optional name to operate on
+    #[clap(value_parser)]
+    port: u16,
+
+    #[clap(value_parser)]
+    destination_url: String,
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
-    let args = Vec::from_iter(args());
-    if args.len() != 3 {
-        eprintln!("Usage: {} <listen_port> <destination_url>", args[0]);
-        return ExitCode::from(1);
-    }
+    let cli = Cli::parse();
 
     // Do this first because our service fn later will
     // consume args.
-    let addr = SocketAddr::from(([0, 0, 0, 0], args[1].parse().unwrap()));
+    let addr = SocketAddr::from(([0, 0, 0, 0], cli.port));
 
     let client = Arc::new(Client::new());
     let logger = Arc::new(Mutex::new(RequestLogger::new()));
     let make_service = make_service_fn(move |_conn| {
-        let d_url = args[2].clone();
+        let d_url = cli.destination_url.clone();
         let client_clone = client.clone();
         let logger_clone = logger.clone();
         async move {
