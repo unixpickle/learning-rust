@@ -1,0 +1,10 @@
+[package]
+edition = "2021"
+name = "futures_test"
+description = "Learning a bit about futures in rust."
+version = "0.1.0"
+authors = ["Alex Nichol <unixpickle@gmail.com>"]
+
+[dependencies]
+tokio = { version = "1.20.1", features=["full"] }
+futures-core = { version = "0.3.23" }
