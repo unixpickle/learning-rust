@@ -1,14 +1,24 @@
 use std::future::Future;
 use std::mem::take;
 use std::pin::Pin;
+use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
 fn main() {
+    println!("running with tokio");
     run_with_tokio(async {
+        async_sleep(Duration::from_secs(1)).await;
+        println!("yo 1");
+        async_sleep(Duration::from_secs(1)).await;
+        println!("yo 2");
+    });
+
+    println!("running with simple runner");
+    run_with_simple_runner(async {
         async_sleep(Duration::from_secs(1)).await;
         println!("yo 1");
         async_sleep(Duration::from_secs(1)).await;
@@ -19,6 +29,26 @@ fn main() {
 fn run_with_tokio<F: Future>(f: F) -> F::Output {
     let rt = Runtime::new().unwrap();
     rt.block_on(f)
+}
+
+fn run_with_simple_runner<F: Future>(f: F) -> F::Output {
+    let (tx, rx) = channel();
+    let mut pinned = Box::pin(f);
+    let waker = channel_waker(tx);
+    let mut ctx = Context::from_waker(&waker);
+    let res = loop {
+        let res = pinned.as_mut().poll(&mut ctx);
+        if let Poll::Ready(x) = res {
+            break x;
+        }
+        rx.recv().unwrap();
+    };
+    drop(ctx);
+    drop(waker);
+    if let Ok(_) = rx.recv() {
+        panic!("not all wakers released");
+    }
+    res
 }
 
 #[derive(Default)]
@@ -74,4 +104,31 @@ fn async_sleep(duration: Duration) -> SleepFuture {
         delay: duration,
         result: Arc::new(Mutex::new(SleepFutureResult::Unstarted)),
     }
+}
+
+fn channel_waker(ch: Sender<()>) -> Waker {
+    unsafe { Waker::from_raw(raw_channel_waker(ch)) }
+}
+
+unsafe fn raw_channel_waker(ch: Sender<()>) -> RawWaker {
+    let x = Box::into_raw(Box::new(ch));
+    RawWaker::new(
+        x as *const (),
+        &RawWakerVTable::new(
+            |ch_ptr| -> RawWaker {
+                raw_channel_waker((ch_ptr as *const Sender<()>).as_ref().unwrap().clone())
+            },
+            |ch_ptr| {
+                Box::from_raw(ch_ptr as *mut Sender<()>).send(()).unwrap();
+            },
+            |ch_ptr| {
+                (ch_ptr as *const Sender<()>)
+                    .as_ref()
+                    .unwrap()
+                    .send(())
+                    .unwrap();
+            },
+            |ch_ptr| drop(Box::from_raw(ch_ptr as *mut Sender<()>)),
+        ),
+    )
 }
