@@ -1,10 +1,10 @@
 // A doubly linked-list implementation, to help me understand
 // weak references, refcells, etc.
 
-use std::cell::{RefCell};
-use std::collections::{VecDeque};
-use std::mem::{take};
-use std::rc::{Weak, Rc};
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::mem::take;
+use std::rc::{Rc, Weak};
 
 struct Node<T> {
     // I can't figure out a way to make this not an Option.
@@ -24,11 +24,14 @@ struct LinkedList<T> {
 
 impl<T> LinkedList<T> {
     fn new() -> LinkedList<T> {
-        LinkedList{head: None, tail: None}
+        LinkedList {
+            head: None,
+            tail: None,
+        }
     }
 
     fn push_front(&mut self, item: T) {
-        let new_head = Rc::new(RefCell::new(Node{
+        let new_head = Rc::new(RefCell::new(Node {
             data: Some(item),
             prev: None,
             next: None,
@@ -38,7 +41,7 @@ impl<T> LinkedList<T> {
                 old_head.borrow_mut().prev = Some(Rc::downgrade(&new_head));
                 new_head.borrow_mut().next = Some(old_head);
                 self.head = Some(new_head);
-            },
+            }
             None => {
                 self.tail = Some(Rc::downgrade(&new_head));
                 self.head = Some(new_head);
@@ -53,22 +56,20 @@ impl<T> LinkedList<T> {
                 match take(&mut obj.next) {
                     None => {
                         self.tail = None;
-                    },
+                    }
                     Some(x) => {
                         x.borrow_mut().prev = None;
                         self.head = Some(x);
                     }
                 };
                 take(&mut obj.data)
-            },
-            None => {
-                None
             }
+            None => None,
         }
     }
 
     fn push_back(&mut self, item: T) {
-        let new_tail = Rc::new(RefCell::new(Node{
+        let new_tail = Rc::new(RefCell::new(Node {
             data: Some(item),
             prev: None,
             next: None,
@@ -79,7 +80,7 @@ impl<T> LinkedList<T> {
                 new_tail.borrow_mut().prev = Some(Rc::downgrade(&old_tail));
                 self.tail = Some(Rc::downgrade(&new_tail));
                 old_tail.borrow_mut().next = Some(new_tail);
-            },
+            }
             None => {
                 self.tail = Some(Rc::downgrade(&new_tail));
                 self.head = Some(new_tail);
@@ -97,13 +98,13 @@ impl<T> LinkedList<T> {
                         let new_tail = new_tail_weak.upgrade().unwrap();
                         new_tail.borrow_mut().next = None;
                         self.tail = Some(Rc::downgrade(&new_tail));
-                    },
+                    }
                     None => {
                         self.head = None;
-                    },
+                    }
                 }
                 take(&mut old_tail.data)
-            },
+            }
             None => None,
         }
     }
@@ -115,7 +116,9 @@ struct GarbageCounter {
 
 impl GarbageCounter {
     fn new() -> Self {
-        GarbageCounter{count: Rc::new(RefCell::new(1))}
+        GarbageCounter {
+            count: Rc::new(RefCell::new(1)),
+        }
     }
 
     fn get(&self) -> usize {
@@ -132,8 +135,26 @@ impl Drop for GarbageCounter {
 impl Clone for GarbageCounter {
     fn clone(&self) -> Self {
         *self.count.borrow_mut() += 1;
-        GarbageCounter{count: self.count.clone()}
+        GarbageCounter {
+            count: self.count.clone(),
+        }
     }
+}
+
+macro_rules! push_linked_list {
+    ($receiver:tt, $($arg:tt),*) => {
+        $(
+            $receiver.push_back($arg);
+        )*
+    };
+}
+
+macro_rules! build_linked_list {
+    ($($args:tt),*) => {{
+        let mut res = LinkedList::new();
+        push_linked_list!(res, $($args),*);
+        res
+    }};
 }
 
 fn check_equivalent() {
@@ -145,7 +166,7 @@ fn check_equivalent() {
             // weight put on insertion than deletion.
             if op < 4 {
                 // Insertion.
-                let n = ((j as i32) + i*1000) * 3613;
+                let n = ((j as i32) + i * 1000) * 3613;
                 if op < 2 {
                     ll.push_back(n);
                     deque.push_back(n);
@@ -207,13 +228,24 @@ fn random_sequence(count: i32, max: i32) -> Vec<i32> {
     let mut n = 1;
     let mut res = Vec::new();
     for _ in 0..count {
-        n = (n*5573 + 1921) % (max * 100);
+        n = (n * 5573 + 1921) % (max * 100);
         res.push(n / 100);
     }
     res
 }
 
+fn check_builder() {
+    let mut ll = build_linked_list!(3, 4, 5, 6);
+    assert_eq!(ll.pop_front(), Some(3));
+    assert_eq!(ll.pop_front(), Some(4));
+    assert_eq!(ll.pop_front(), Some(5));
+    assert_eq!(ll.pop_front(), Some(6));
+    assert_eq!(ll.pop_front(), None);
+    println!("builder tests pass")
+}
+
 fn main() {
     check_equivalent();
     check_cleaned_up();
+    check_builder();
 }
