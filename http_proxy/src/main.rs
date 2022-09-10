@@ -1,4 +1,5 @@
 use clap::Parser;
+use futures_core::Stream;
 use futures_util::StreamExt;
 use hyper::client::{Client, HttpConnector};
 use hyper::header::CONTENT_TYPE;
@@ -7,9 +8,12 @@ use hyper::{Body, Request, Response, Server, Uri};
 use std::convert::Infallible;
 use std::error::Error as StdError;
 use std::fmt;
+use std::mem::take;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 
 #[derive(Parser, Clone)]
 #[clap(author, version, about, long_about = None)]
@@ -188,16 +192,45 @@ impl RequestLogger {
 }
 
 fn logging_body(wrapped: Body, logger: Arc<Mutex<RequestLogger>>, is_request: bool) -> Body {
-    let new_stream = wrapped.inspect(move |obj| {
-        if let Ok(data) = obj {
-            let size = data.len() as i64;
-            let mut logger = logger.lock().unwrap();
-            if is_request {
-                logger.request_bytes += size;
-            } else {
-                logger.response_bytes += size;
+    let logger_clone = logger.clone();
+    let counter_stream = wrapped
+        .inspect(move |obj| {
+            if let Ok(data) = obj {
+                let size = data.len() as i64;
+                let mut logger = logger.lock().unwrap();
+                if is_request {
+                    logger.request_bytes += size;
+                } else {
+                    logger.response_bytes += size;
+                }
             }
+        })
+        .chain(EmptyStream {
+            drop_fn: Some(move || logger_clone.lock().unwrap().log_body_ended(is_request)),
+        });
+    Body::wrap_stream(counter_stream)
+}
+
+struct EmptyStream<F: FnOnce() -> ()> {
+    drop_fn: Option<F>,
+}
+
+impl<F: FnOnce() -> ()> Stream for EmptyStream<F> {
+    type Item = <Body as Stream>::Item;
+
+    fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Poll::Ready(None)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some(1))
+    }
+}
+
+impl<F: FnOnce() -> ()> Drop for EmptyStream<F> {
+    fn drop(&mut self) {
+        if let Some(f) = take(&mut self.drop_fn) {
+            f();
         }
-    });
-    Body::wrap_stream(new_stream)
+    }
 }
