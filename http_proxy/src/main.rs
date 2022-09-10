@@ -1,6 +1,5 @@
 use clap::Parser;
-use futures_core::stream::Stream;
-use hyper::body::Bytes;
+use futures_util::StreamExt;
 use hyper::client::{Client, HttpConnector};
 use hyper::header::CONTENT_TYPE;
 use hyper::service::{make_service_fn, service_fn};
@@ -9,10 +8,8 @@ use std::convert::Infallible;
 use std::error::Error as StdError;
 use std::fmt;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
 
 #[derive(Parser, Clone)]
 #[clap(author, version, about, long_about = None)]
@@ -190,57 +187,17 @@ impl RequestLogger {
     }
 }
 
-struct LoggingStream<S: Stream<Item = hyper::Result<Bytes>>> {
-    wrapped: Pin<Box<S>>,
-    logger: Arc<Mutex<RequestLogger>>,
-    is_request: bool,
-}
-
-impl<S: Stream<Item = hyper::Result<Bytes>>> LoggingStream<S> {
-    fn new(stream: S, logger: Arc<Mutex<RequestLogger>>, is_request: bool) -> Self {
-        LoggingStream {
-            wrapped: Box::pin(stream),
-            logger,
-            is_request,
-        }
-    }
-}
-
-impl<S: Stream<Item = hyper::Result<Bytes>>> Stream for LoggingStream<S> {
-    type Item = S::Item;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let res = self.wrapped.as_mut().poll_next(cx);
-        match res {
-            Poll::Ready(Some(Ok(data))) => {
-                let size = data.len() as i64;
-                let mut logger = self.logger.lock().unwrap();
-                if self.is_request {
-                    logger.request_bytes += size;
-                } else {
-                    logger.response_bytes += size;
-                }
-                Poll::Ready(Some(Ok(data)))
-            }
-            x => x,
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        return self.wrapped.size_hint();
-    }
-}
-
-impl<S: Stream<Item = hyper::Result<Bytes>>> Drop for LoggingStream<S> {
-    fn drop(&mut self) {
-        inner_drop(unsafe { Pin::new_unchecked(self) });
-        fn inner_drop<S: Stream<Item = hyper::Result<Bytes>>>(this: Pin<&mut LoggingStream<S>>) {
-            let is_req = this.is_request;
-            this.logger.lock().unwrap().log_body_ended(is_req);
-        }
-    }
-}
-
 fn logging_body(wrapped: Body, logger: Arc<Mutex<RequestLogger>>, is_request: bool) -> Body {
-    Body::wrap_stream(LoggingStream::new(wrapped, logger, is_request))
+    let new_stream = wrapped.inspect(move |obj| {
+        if let Ok(data) = obj {
+            let size = data.len() as i64;
+            let mut logger = logger.lock().unwrap();
+            if is_request {
+                logger.request_bytes += size;
+            } else {
+                logger.response_bytes += size;
+            }
+        }
+    });
+    Body::wrap_stream(new_stream)
 }
