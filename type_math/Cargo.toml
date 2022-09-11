@@ -1,0 +1,6 @@
+[package]
+edition = "2021"
+name = "type_math"
+description = "Implementing math at compile time with types."
+version = "0.1.0"
+authors = ["Alex Nichol <unixpickle@gmail.com>"]
