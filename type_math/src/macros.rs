@@ -13,6 +13,18 @@ macro_rules! mul {
     };
 }
 
+macro_rules! min {
+    ($x:ty, $y:ty) => {
+        <$x as Min<$y>>::Min
+    };
+}
+
+macro_rules! max {
+    ($x:ty, $y:ty) => {
+        <$x as Max<$y>>::Max
+    };
+}
+
 // Construct multi-digit numbers using the standard trick of repeatedly
 // multiplying by 10 and adding the next digit.
 //
@@ -37,4 +49,6 @@ macro_rules! digits {
 
 pub(crate) use add;
 pub(crate) use digits;
+pub(crate) use max;
+pub(crate) use min;
 pub(crate) use mul;
