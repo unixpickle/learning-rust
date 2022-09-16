@@ -1,6 +1,7 @@
 use std::{process::ExitCode, str::FromStr};
 
 use clap::Parser;
+use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::Value;
 
@@ -21,18 +22,35 @@ struct Cli {
 async fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    let parsed_params: Value = serde_json::from_str(&cli.params_json).unwrap();
+    let mut parsed_params: Value = serde_json::from_str(&cli.params_json).unwrap();
+
+    let re = Regex::new(r"<NextMarker>(.*)</NextMarker>").unwrap();
 
     let client = reqwest::Client::new();
-    let req = client
-        .get(cli.url)
-        .query(&parsed_params)
-        .headers(parse_header_map(&cli.headers_json))
-        .build()
-        .unwrap();
-    let response = client.execute(req).await.unwrap();
 
-    println!("{}", response.text().await.unwrap());
+    loop {
+        println!("requesting page {}...", cli.url);
+        let req = client
+            .get(&cli.url)
+            .query(&parsed_params)
+            .headers(parse_header_map(&cli.headers_json))
+            .build()
+            .unwrap();
+        let response = client.execute(req).await.unwrap();
+        let text = response.text().await.unwrap();
+
+        println!("got page of size {}", text.len());
+        if let Some(next_match) = re.captures(&text) {
+            let token = next_match.get(1).unwrap().as_str().to_owned();
+            println!("token {}", token);
+            parsed_params
+                .as_object_mut()
+                .unwrap()
+                .insert("marker".into(), token.into());
+        } else {
+            break;
+        }
+    }
 
     ExitCode::SUCCESS
 }

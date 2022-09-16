@@ -14,7 +14,7 @@ def main():
     args = parser.parse_args()
 
     account, container, prefix = az.split_path(args.az_dir)
-    params = dict(comp="list", restype="container", prefix=prefix)
+    params = dict(comp="list", restype="container", delimiter="/", prefix=prefix)
 
     # https://github.com/christopher-hesse/blobfile/blob/b14b012626d0af7887d84dcc76fdbe47e9b58215/blobfile/_azure.py#L1304
     req = az.Request(
