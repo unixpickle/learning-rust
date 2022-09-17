@@ -1,3 +1,7 @@
+mod generators;
+
+use crate::generators::make_stream;
+use futures_util::StreamExt;
 use std::future::Future;
 use std::mem::take;
 use std::pin::Pin;
@@ -10,20 +14,33 @@ use tokio::runtime::Runtime;
 
 fn main() {
     println!("running with tokio");
-    run_with_tokio(async {
-        async_sleep(Duration::from_secs(1)).await;
-        println!("yo 1");
-        async_sleep(Duration::from_secs(1)).await;
-        println!("yo 2");
-    });
+    run_with_tokio(my_function());
 
     println!("running with simple runner");
-    run_with_simple_runner(async {
-        async_sleep(Duration::from_secs(1)).await;
-        println!("yo 1");
-        async_sleep(Duration::from_secs(1)).await;
-        println!("yo 2");
+    run_with_simple_runner(my_function());
+}
+
+async fn my_function() {
+    async_sleep(Duration::from_secs(1)).await;
+    println!("yo 1");
+    async_sleep(Duration::from_secs(1)).await;
+    println!("yo 2");
+
+    let gen = make_stream::<i32, _, _>(|mut yielder| async move {
+        for i in 0..10 {
+            async_sleep(Duration::from_millis(109)).await;
+            yielder.put(i).await;
+        }
     });
+    let collected: Vec<i32> = gen.collect().await;
+    println!(
+        "{}",
+        collected
+            .into_iter()
+            .map(|x| format!("{}", x))
+            .collect::<Vec<String>>()
+            .join(", ")
+    );
 }
 
 fn run_with_tokio<F: Future>(f: F) -> F::Output {

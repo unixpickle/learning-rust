@@ -32,7 +32,7 @@ pub struct Yielder<T: Unpin> {
 }
 
 impl<T: Unpin> Yielder<T> {
-    fn put(&mut self, x: T) -> YielderFuture<T> {
+    pub fn put(&mut self, x: T) -> YielderFuture<T> {
         let mut locked = self.state.lock().unwrap();
         if locked.value.is_some() {
             panic!("cannot yield more than once without awaiting the previous result");
