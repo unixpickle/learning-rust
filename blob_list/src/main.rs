@@ -29,7 +29,6 @@ async fn main() -> ExitCode {
     let client = reqwest::Client::new();
 
     loop {
-        println!("requesting page {}...", cli.url);
         let req = client
             .get(&cli.url)
             .query(&parsed_params)
@@ -39,10 +38,11 @@ async fn main() -> ExitCode {
         let response = client.execute(req).await.unwrap();
         let text = response.text().await.unwrap();
 
-        println!("got page of size {}", text.len());
+        for item in parse_listing(&text) {
+            println!("{}", item);
+        }
         if let Some(next_match) = re.captures(&text) {
             let token = next_match.get(1).unwrap().as_str().to_owned();
-            println!("token {}", token);
             parsed_params
                 .as_object_mut()
                 .unwrap()
@@ -64,6 +64,15 @@ fn parse_header_map(headers_json: &str) -> HeaderMap {
             HeaderName::from_str(&k).unwrap(),
             HeaderValue::from_str(v.as_str().unwrap()).unwrap(),
         );
+    }
+    res
+}
+
+fn parse_listing(listing: &str) -> Vec<String> {
+    let expr = Regex::new(r"<Name>(.*?)</Name>").unwrap();
+    let mut res = Vec::new();
+    for x in expr.captures_iter(listing) {
+        res.push(x.get(1).unwrap().as_str().to_owned());
     }
     res
 }
