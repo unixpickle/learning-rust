@@ -8,3 +8,4 @@ authors = ["Alex Nichol <unixpickle@gmail.com>"]
 [dependencies]
 tokio = { version = "1.20.1", features=["full"] }
 futures-core = { version = "0.3.23" }
+futures-util = { version = "0.3.23" }

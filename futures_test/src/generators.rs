@@ -82,6 +82,10 @@ impl<T: Unpin, Fut: Future> Stream for YielderStream<T, Fut> {
     }
 }
 
+// Call this with a closure that takes a single argument, a yielder.
+// The closure may act like a normal async function, and can call other
+// async methods.
+// To yield a value to the stream, call yielder.put(value).await.
 pub fn make_stream<T: Unpin, F, Fut: Future<Output = ()>>(f: F) -> YielderStream<T, Fut>
 where
     F: FnOnce(Yielder<T>) -> Fut,
