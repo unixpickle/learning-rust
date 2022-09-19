@@ -1,14 +1,28 @@
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fmt::Display;
-type Result<T> = std::result::Result<T, Error>;
+use std::{fmt::Display, time::Duration};
+use tokio::time::sleep;
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
     HTTP(reqwest::Error),
+    RetryLimitExceeded,
     ParseJSON(serde_json::Error),
     ProcessJSON(String),
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::HTTP(e) => write!(f, "error making request: {}", e),
+            Self::RetryLimitExceeded => write!(f, "request retry limit exceeded"),
+            Self::ParseJSON(e) => write!(f, "error parsing JSON: {}", e),
+            Self::ProcessJSON(e) => write!(f, "error processing JSON structure: {}", e),
+        }
+    }
 }
 
 impl From<reqwest::Error> for Error {
@@ -26,9 +40,60 @@ impl From<serde_json::Error> for Error {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GeoCoord(pub f64, pub f64);
 
-impl Display for GeoCoord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.15},{:.15}", self.0, self.1)
+impl GeoCoord {
+    pub fn neighborhood(&self, step_size: f64) -> (Self, Self) {
+        (
+            GeoCoord(self.0 - step_size, self.1 - step_size).clamp(),
+            GeoCoord(self.0 + step_size, self.1 + step_size).clamp(),
+        )
+    }
+    pub fn clamp(&self) -> Self {
+        Self(self.0.clamp(-90.0, 90.0), self.1.clamp(-180.0, 180.0))
+    }
+
+    pub fn mid(&self, other: &Self) -> Self {
+        Self((self.0 + other.0) / 2.0, (self.1 + other.1) / 2.0)
+    }
+}
+
+pub struct GeoBounds(GeoCoord, GeoCoord);
+
+impl GeoBounds {
+    pub fn globe(step_size: f64) -> Vec<GeoBounds> {
+        let mut all_regions = Vec::new();
+        let mut lat = 0.0;
+        while lat < 90.0 {
+            let mut lon = -180.0;
+            while lon < 180.0 {
+                for lat_sign in [-1.0, 1.0] {
+                    let coord = GeoCoord(lat * lat_sign, lon);
+                    let (min, max) = coord.neighborhood(step_size);
+                    all_regions.push(GeoBounds(min, max));
+                    lon += step_size;
+                }
+            }
+            lat += step_size;
+        }
+        all_regions
+    }
+
+    pub fn mid(&self) -> GeoCoord {
+        return self.0.mid(&self.1);
+    }
+
+    pub fn split(&self) -> [GeoBounds; 4] {
+        let x0 = self.0 .0;
+        let y0 = self.0 .1;
+        let x1 = self.mid().0;
+        let y1 = self.mid().1;
+        let x2 = self.1 .0;
+        let y2 = self.1 .1;
+        [
+            GeoBounds(GeoCoord(x0, y0), GeoCoord(x1, y1)),
+            GeoBounds(GeoCoord(x1, y0), GeoCoord(x2, y1)),
+            GeoBounds(GeoCoord(x0, y1), GeoCoord(x1, y2)),
+            GeoBounds(GeoCoord(x1, y1), GeoCoord(x2, y2)),
+        ]
     }
 }
 
@@ -53,52 +118,64 @@ impl Client {
         }
     }
 
-    pub async fn map_search(
-        &self,
-        query: &str,
-        min: GeoCoord,
-        max: GeoCoord,
-        center: GeoCoord,
-    ) -> Result<Vec<MapItem>> {
-        let response = self
-            .client
-            .get("https://www.bing.com/maps/overlaybfpr")
-            .query(&[
-                ("q", query),
-                ("filters", "direction_partner:\"maps\""),
-                ("mapcardtitle", ""),
-                ("p1", "[AplusAnswer]"),
-                ("count", "18"),
-                ("ecount", "18"),
-                ("first", "0"),
-                ("efirst", "1"),
-                ("localMapView", &format!("{},{}", min, max)),
-                ("ads", "0"),
-                ("cp", &format!("{}", center)),
-            ])
-            .send()
-            .await?
-            .text()
-            .await?;
-        let doc = Html::parse_fragment(&response);
-        let mut result = Vec::new();
-        for obj in doc.select(&Selector::parse("a.listings-item").unwrap()) {
-            if let Some(info_json) = obj.value().attr("data-entity") {
-                let parsed: Value = serde_json::from_str(info_json)?;
-                result.push(MapItem {
-                    id: read_object(&parsed, "entity.id")?,
-                    name: read_object(&parsed, "entity.title")?,
-                    location: GeoCoord(
-                        read_object(&parsed, "geometry.x")?,
-                        read_object(&parsed, "geometry.y")?,
+    pub async fn map_search(&self, query: &str, bounds: &GeoBounds) -> Result<Vec<MapItem>> {
+        for retry_timeout in [0.1, 1.0, 2.0, 4.0, 8.0, 10.0, 16.0, 32.0] {
+            let response = self
+                .client
+                .get("https://www.bing.com/maps/overlaybfpr")
+                .query(&[
+                    ("q", query),
+                    ("filters", "direction_partner:\"maps\""),
+                    ("mapcardtitle", ""),
+                    ("p1", "[AplusAnswer]"),
+                    ("count", "100"),
+                    ("ecount", "100"),
+                    ("first", "0"),
+                    ("efirst", "1"),
+                    (
+                        "localMapView",
+                        &format!(
+                            "{:.15},{:.15},{:.15},{:.15}",
+                            bounds.1 .0, bounds.0 .1, bounds.0 .0, bounds.1 .1
+                        ),
                     ),
-                    address: read_object(&parsed, "entity.address")?,
-                    phone: read_object(&parsed, "entity.phone").ok(),
-                    chain_id: read_object(&parsed, "entity.chainId").ok(),
-                });
+                    ("ads", "0"),
+                    (
+                        "cp",
+                        &format!("{:.15}~{:.15}", bounds.mid().0, bounds.mid().1),
+                    ),
+                ])
+                .send()
+                .await?
+                .text()
+                .await?;
+            // When overloaded, the server responds with messages of the form:
+            // Ref A: DC5..................73B Ref B: AMB......06 Ref C: 2022-09-20T00:20:31Z
+            if response.starts_with("Ref A:") {
+                sleep(Duration::from_secs_f64(retry_timeout)).await;
+                continue;
             }
+            let doc = Html::parse_fragment(&response);
+            let mut result = Vec::new();
+            for obj in doc.select(&Selector::parse("a.listings-item").unwrap()) {
+                if let Some(info_json) = obj.value().attr("data-entity") {
+                    let parsed: Value = serde_json::from_str(info_json)?;
+                    result.push(MapItem {
+                        id: read_object(&parsed, "entity.id")?,
+                        name: read_object(&parsed, "entity.title")?,
+                        location: GeoCoord(
+                            read_object(&parsed, "geometry.x")?,
+                            read_object(&parsed, "geometry.y")?,
+                        ),
+                        address: read_object(&parsed, "entity.address")?,
+                        phone: read_object(&parsed, "entity.phone").ok(),
+                        chain_id: read_object(&parsed, "entity.chainId").ok(),
+                    });
+                }
+            }
+            return Ok(result);
         }
-        Ok(result)
+        Err(Error::RetryLimitExceeded)
     }
 }
 
