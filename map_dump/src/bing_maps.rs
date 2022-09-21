@@ -25,6 +25,8 @@ impl Display for Error {
     }
 }
 
+impl std::error::Error for Error {}
+
 impl From<reqwest::Error> for Error {
     fn from(e: reqwest::Error) -> Self {
         Error::HTTP(e)

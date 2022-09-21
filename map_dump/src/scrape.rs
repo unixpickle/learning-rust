@@ -2,10 +2,7 @@ use crate::bing_maps;
 use crate::bing_maps::{Client, GeoBounds, MapItem};
 use async_channel::{bounded, unbounded, Receiver, Sender};
 use clap::Parser;
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    process::ExitCode,
-};
+use std::collections::{HashMap, HashSet, VecDeque};
 use tokio::{fs::File, io::AsyncWriteExt, spawn};
 
 #[derive(Clone, Parser)]
@@ -26,14 +23,8 @@ pub struct ScrapeArgs {
     output_path: String,
 }
 
-pub async fn scrape(cli: ScrapeArgs) -> ExitCode {
-    let mut output = match File::create(cli.output_path).await {
-        Ok(x) => x,
-        Err(e) => {
-            eprintln!("error opening output: {}", e);
-            return ExitCode::FAILURE;
-        }
-    };
+pub async fn scrape(cli: ScrapeArgs) -> anyhow::Result<()> {
+    let mut output = File::create(cli.output_path).await?;
 
     let (regions, region_count) = world_regions(cli.step_size);
     let (response_tx, response_rx) = bounded((cli.parallelism as usize) * 10);
@@ -51,23 +42,12 @@ pub async fn scrape(cli: ScrapeArgs) -> ExitCode {
     let mut found = HashSet::new();
     let mut completed_regions: usize = 0;
     while let Ok(response) = response_rx.recv().await {
-        match response {
-            Ok(listing) => {
-                for x in listing {
-                    if found.insert(x.id.clone()) {
-                        if let Err(e) = output
-                            .write_all((serde_json::to_string(&x).unwrap() + "\n").as_bytes())
-                            .await
-                        {
-                            eprintln!("error writing output: {}", e);
-                            return ExitCode::FAILURE;
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("{}", e);
-                return ExitCode::FAILURE;
+        let listing = response?;
+        for x in listing {
+            if found.insert(x.id.clone()) {
+                output
+                    .write_all((serde_json::to_string(&x).unwrap() + "\n").as_bytes())
+                    .await?;
             }
         }
         completed_regions += 1;
@@ -81,12 +61,8 @@ pub async fn scrape(cli: ScrapeArgs) -> ExitCode {
         );
     }
 
-    if let Err(e) = output.flush().await {
-        eprintln!("error writing output: {}", e);
-        return ExitCode::FAILURE;
-    }
-
-    ExitCode::SUCCESS
+    output.flush().await?;
+    Ok(())
 }
 
 fn world_regions(step_size: f64) -> (Receiver<GeoBounds>, usize) {

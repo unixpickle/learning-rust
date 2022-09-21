@@ -1,4 +1,5 @@
 mod bing_maps;
+mod clean;
 mod scrape;
 
 use clap::Parser;
@@ -11,12 +12,22 @@ enum Cli {
         #[clap(flatten)]
         args: scrape::ScrapeArgs,
     },
+    Clean {
+        #[clap(flatten)]
+        args: clean::CleanArgs,
+    },
 }
 
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    match cli {
+    if let Err(e) = match cli {
         Cli::Scrape { args } => scrape::scrape(args).await,
+        Cli::Clean { args } => clean::clean(args).await,
+    } {
+        eprintln!("{}", e);
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
 }
