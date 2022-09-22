@@ -120,7 +120,24 @@ impl Client {
         }
     }
 
-    pub async fn map_search(&self, query: &str, bounds: &GeoBounds) -> Result<Vec<MapItem>> {
+    pub async fn map_search(
+        &self,
+        query: &str,
+        bounds: &GeoBounds,
+        max_retries: i32,
+    ) -> Result<Vec<MapItem>> {
+        let mut retry_count = 0;
+        loop {
+            let res = self.map_search_attempt(query, bounds).await;
+            retry_count += 1;
+            if res.is_ok() || retry_count >= max_retries {
+                break res;
+            }
+            sleep(Duration::from_secs(10)).await;
+        }
+    }
+
+    async fn map_search_attempt(&self, query: &str, bounds: &GeoBounds) -> Result<Vec<MapItem>> {
         for retry_timeout in [0.1, 1.0, 2.0, 4.0, 8.0, 10.0, 16.0, 32.0] {
             let response = self
                 .client

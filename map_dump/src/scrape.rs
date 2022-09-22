@@ -3,7 +3,11 @@ use crate::bing_maps::{Client, GeoBounds, MapItem};
 use async_channel::{bounded, unbounded, Receiver, Sender};
 use clap::Parser;
 use std::collections::{HashMap, HashSet, VecDeque};
-use tokio::{fs::File, io::AsyncWriteExt, spawn};
+use tokio::{
+    fs::{remove_file, File},
+    io::AsyncWriteExt,
+    spawn,
+};
 
 #[derive(Clone, Parser)]
 pub struct ScrapeArgs {
@@ -16,6 +20,9 @@ pub struct ScrapeArgs {
     #[clap(short, long, value_parser, default_value_t = 4)]
     parallelism: i32,
 
+    #[clap(short, long, value_parser, default_value_t = 5)]
+    retries: i32,
+
     #[clap(value_parser)]
     store_name: String,
 
@@ -24,7 +31,7 @@ pub struct ScrapeArgs {
 }
 
 pub async fn scrape(cli: ScrapeArgs) -> anyhow::Result<()> {
-    let mut output = File::create(cli.output_path).await?;
+    let mut output = File::create(&cli.output_path).await?;
 
     let (regions, region_count) = world_regions(cli.step_size);
     let (response_tx, response_rx) = bounded((cli.parallelism as usize) * 10);
@@ -32,6 +39,7 @@ pub async fn scrape(cli: ScrapeArgs) -> anyhow::Result<()> {
         spawn(fetch_regions(
             cli.store_name.clone(),
             cli.max_subdivisions,
+            cli.retries,
             regions.clone(),
             response_tx.clone(),
         ));
@@ -39,6 +47,23 @@ pub async fn scrape(cli: ScrapeArgs) -> anyhow::Result<()> {
     // Make sure the channel is ended once all the workers finish.
     drop(response_tx);
 
+    if let result @ Err(_) = write_outputs(&cli, &mut output, response_rx, region_count).await {
+        eprintln!("deleting output due to error...");
+        drop(output);
+        remove_file(cli.output_path).await?;
+        result
+    } else {
+        output.flush().await?;
+        Ok(())
+    }
+}
+
+async fn write_outputs(
+    cli: &ScrapeArgs,
+    output: &mut File,
+    response_rx: Receiver<bing_maps::Result<Vec<MapItem>>>,
+    region_count: usize,
+) -> anyhow::Result<()> {
     let mut found = HashSet::new();
     let mut completed_regions: usize = 0;
     while let Ok(response) = response_rx.recv().await {
@@ -60,8 +85,6 @@ pub async fn scrape(cli: ScrapeArgs) -> anyhow::Result<()> {
             found.len()
         );
     }
-
-    output.flush().await?;
     Ok(())
 }
 
@@ -85,13 +108,15 @@ fn world_regions(step_size: f64) -> (Receiver<GeoBounds>, usize) {
 async fn fetch_regions(
     store_name: String,
     max_subdivisions: i32,
+    max_retries: i32,
     tasks: Receiver<GeoBounds>,
     results: Sender<bing_maps::Result<Vec<MapItem>>>,
 ) {
     let client = Client::new();
     while let Ok(bounds) = tasks.recv().await {
         let response =
-            fetch_bounds_subdivided(&client, &store_name, bounds, max_subdivisions).await;
+            fetch_bounds_subdivided(&client, &store_name, bounds, max_retries, max_subdivisions)
+                .await;
         let was_ok = response.is_ok();
         if results.send(response).await.is_err() || !was_ok {
             // If we cannot send, it means the main coroutine died
@@ -107,12 +132,13 @@ async fn fetch_bounds_subdivided(
     client: &Client,
     query: &str,
     bounds: GeoBounds,
+    max_retries: i32,
     max_subdivisions: i32,
 ) -> bing_maps::Result<Vec<MapItem>> {
     // This would be easier with recursion than a depth-first search,
     // but recursion with futures is super annoying and wouldn't allow
     // us to use finite lifetimes for the arguments.
-    let initial_results = client.map_search(query, &bounds).await?;
+    let initial_results = client.map_search(query, &bounds, max_retries).await?;
     let mut queue = VecDeque::from([(bounds, initial_results, 0)]);
     let mut results = HashMap::new();
     while let Some((bounds, sub_results, depth)) = queue.pop_front() {
@@ -126,7 +152,7 @@ async fn fetch_bounds_subdivided(
         // results, indicating that this area is dense with stores.
         if new_count > old_count && depth < max_subdivisions {
             for subdivided in bounds.split() {
-                let new_results = client.map_search(query, &subdivided).await?;
+                let new_results = client.map_search(query, &subdivided, max_retries).await?;
                 queue.push_back((subdivided, new_results, depth + 1));
             }
         }
