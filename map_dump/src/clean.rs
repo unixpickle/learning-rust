@@ -1,5 +1,5 @@
 use crate::bing_maps::MapItem;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use clap::Parser;
 use tokio::{
@@ -36,8 +36,38 @@ pub async fn clean(cli: CleanArgs) -> anyhow::Result<()> {
 
 pub async fn clean_file(src: PathBuf, dst: PathBuf) -> anyhow::Result<()> {
     let items = read_map_items(src).await?;
-    // TODO: filter the lines here to use the most popular chain_id.
-    write_map_items(dst, items).await
+
+    // Count using the entry() API, as presented in the docs:
+    // https://doc.rust-lang.org/std/collections/index.html#counting-the-number-of-times-each-character-in-a-string-occurs
+    let mut counter = HashMap::new();
+    for item in &items {
+        if let Some(id) = &item.chain_id {
+            *counter.entry(id).or_insert(0) += 1;
+        }
+    }
+
+    // Only filter by chain ID if some chain was present.
+    if let Some((chain_id, _)) =
+        counter
+            .into_iter()
+            .reduce(|(chain_id, count), (new_chain_id, new_count)| {
+                if new_count > count {
+                    (new_chain_id, new_count)
+                } else {
+                    (chain_id, count)
+                }
+            })
+    {
+        write_map_items(
+            dst,
+            items
+                .iter()
+                .filter(|x| x.chain_id.as_deref() == Some(chain_id)),
+        )
+        .await
+    } else {
+        write_map_items(dst, items.iter()).await
+    }
 }
 
 pub async fn read_map_items(src: PathBuf) -> anyhow::Result<Vec<MapItem>> {
@@ -52,11 +82,14 @@ pub async fn read_map_items(src: PathBuf) -> anyhow::Result<Vec<MapItem>> {
     Ok(result?)
 }
 
-pub async fn write_map_items(path: PathBuf, items: Vec<MapItem>) -> anyhow::Result<()> {
+pub async fn write_map_items(
+    path: PathBuf,
+    items: impl Iterator<Item = &MapItem>,
+) -> anyhow::Result<()> {
     let mut writer = File::create(path).await?;
     for item in items {
         writer
-            .write_all(serde_json::to_string(&item)?.as_bytes())
+            .write_all(serde_json::to_string(item)?.as_bytes())
             .await?;
     }
     writer.flush().await?;

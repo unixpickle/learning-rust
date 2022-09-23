@@ -1,3 +1,4 @@
+use reqwest::Version;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -104,7 +105,7 @@ pub struct MapItem {
     pub id: String,
     pub name: String,
     pub location: GeoCoord,
-    pub address: String,
+    pub address: Option<String>,
     pub phone: Option<String>,
     pub chain_id: Option<String>,
 }
@@ -130,10 +131,12 @@ impl Client {
         loop {
             let res = self.map_search_attempt(query, bounds).await;
             retry_count += 1;
-            if res.is_ok() || retry_count >= max_retries {
+            if res.is_ok() || retry_count > max_retries {
                 break res;
+            } else {
+                eprintln!("retrying after error: {}", res.unwrap_err());
+                sleep(Duration::from_secs(10)).await;
             }
-            sleep(Duration::from_secs(10)).await;
         }
     }
 
@@ -142,6 +145,7 @@ impl Client {
             let response = self
                 .client
                 .get("https://www.bing.com/maps/overlaybfpr")
+                .version(Version::HTTP_11)
                 .query(&[
                     ("q", query),
                     ("filters", "direction_partner:\"maps\""),
@@ -186,7 +190,7 @@ impl Client {
                             read_object(&parsed, "geometry.x")?,
                             read_object(&parsed, "geometry.y")?,
                         ),
-                        address: read_object(&parsed, "entity.address")?,
+                        address: read_object(&parsed, "entity.address").ok(),
                         phone: read_object(&parsed, "entity.phone").ok(),
                         chain_id: read_object(&parsed, "entity.chainId").ok(),
                     });
@@ -217,7 +221,14 @@ fn read_object<T: FromJSON>(root: &Value, path: &str) -> Result<T> {
             )));
         }
     }
-    T::from_json(cur_obj)
+    match T::from_json(cur_obj) {
+        Ok(x) => Ok(x),
+        Err(Error::ProcessJSON(x)) => Err(Error::ProcessJSON(format!(
+            "error for object path {}: {}",
+            path, x
+        ))),
+        other => other,
+    }
 }
 
 trait FromJSON

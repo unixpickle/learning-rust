@@ -71,7 +71,7 @@ async fn write_outputs(
         for x in listing {
             if found.insert(x.id.clone()) {
                 output
-                    .write_all((serde_json::to_string(&x).unwrap() + "\n").as_bytes())
+                    .write_all((serde_json::to_string(&x)? + "\n").as_bytes())
                     .await?;
             }
         }
