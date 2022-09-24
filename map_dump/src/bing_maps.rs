@@ -5,6 +5,8 @@ use serde_json::Value;
 use std::{fmt::Display, time::Duration};
 use tokio::time::sleep;
 
+use crate::geo_coord::{GeoBounds, GeoCoord};
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
@@ -37,66 +39,6 @@ impl From<reqwest::Error> for Error {
 impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self {
         Error::ParseJSON(e)
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GeoCoord(pub f64, pub f64);
-
-impl GeoCoord {
-    pub fn neighborhood(&self, step_size: f64) -> (Self, Self) {
-        (
-            GeoCoord(self.0 - step_size, self.1 - step_size).clamp(),
-            GeoCoord(self.0 + step_size, self.1 + step_size).clamp(),
-        )
-    }
-    pub fn clamp(&self) -> Self {
-        Self(self.0.clamp(-90.0, 90.0), self.1.clamp(-180.0, 180.0))
-    }
-
-    pub fn mid(&self, other: &Self) -> Self {
-        Self((self.0 + other.0) / 2.0, (self.1 + other.1) / 2.0)
-    }
-}
-
-pub struct GeoBounds(GeoCoord, GeoCoord);
-
-impl GeoBounds {
-    pub fn globe(step_size: f64) -> Vec<GeoBounds> {
-        let mut all_regions = Vec::new();
-        let mut lat = 0.0;
-        while lat < 90.0 {
-            let mut lon = -180.0;
-            while lon < 180.0 {
-                for lat_sign in [-1.0, 1.0] {
-                    let coord = GeoCoord(lat * lat_sign, lon);
-                    let (min, max) = coord.neighborhood(step_size);
-                    all_regions.push(GeoBounds(min, max));
-                    lon += step_size;
-                }
-            }
-            lat += step_size;
-        }
-        all_regions
-    }
-
-    pub fn mid(&self) -> GeoCoord {
-        return self.0.mid(&self.1);
-    }
-
-    pub fn split(&self) -> [GeoBounds; 4] {
-        let x0 = self.0 .0;
-        let y0 = self.0 .1;
-        let x1 = self.mid().0;
-        let y1 = self.mid().1;
-        let x2 = self.1 .0;
-        let y2 = self.1 .1;
-        [
-            GeoBounds(GeoCoord(x0, y0), GeoCoord(x1, y1)),
-            GeoBounds(GeoCoord(x1, y0), GeoCoord(x2, y1)),
-            GeoBounds(GeoCoord(x0, y1), GeoCoord(x1, y2)),
-            GeoBounds(GeoCoord(x1, y1), GeoCoord(x2, y2)),
-        ]
     }
 }
 

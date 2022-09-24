@@ -1,5 +1,6 @@
 use crate::bing_maps;
-use crate::bing_maps::{Client, GeoBounds, MapItem};
+use crate::bing_maps::{Client, MapItem};
+use crate::geo_coord::GeoBounds;
 use async_channel::{bounded, unbounded, Receiver, Sender};
 use clap::Parser;
 use std::collections::{HashMap, HashSet, VecDeque};

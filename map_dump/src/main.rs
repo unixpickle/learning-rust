@@ -1,5 +1,6 @@
 mod bing_maps;
 mod clean;
+mod geo_coord;
 mod scrape;
 
 use clap::Parser;

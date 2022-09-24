@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 use clap::Parser;
 use tokio::{
-    fs::{read_dir, File},
+    fs::{create_dir, read_dir, File},
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
@@ -19,6 +19,8 @@ pub struct CleanArgs {
 pub async fn clean(cli: CleanArgs) -> anyhow::Result<()> {
     let input_dir = PathBuf::from(cli.input_dir);
     let output_dir = PathBuf::from(cli.output_dir);
+
+    create_dir(&output_dir).await?;
 
     let mut reader = read_dir(&input_dir).await?;
     while let Some(entry) = reader.next_entry().await? {
@@ -77,6 +79,7 @@ pub async fn read_map_items(src: PathBuf) -> anyhow::Result<Vec<MapItem>> {
     let result = data
         .split("\n")
         .into_iter()
+        .filter(|x| x.len() > 0)
         .map(|x| serde_json::from_str(&x))
         .collect::<Result<Vec<_>, _>>();
     Ok(result?)
@@ -89,7 +92,7 @@ pub async fn write_map_items(
     let mut writer = File::create(path).await?;
     for item in items {
         writer
-            .write_all(serde_json::to_string(item)?.as_bytes())
+            .write_all(format!("{}\n", serde_json::to_string(item)?).as_bytes())
             .await?;
     }
     writer.flush().await?;
