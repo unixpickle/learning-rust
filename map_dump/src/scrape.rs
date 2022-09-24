@@ -1,13 +1,16 @@
 use crate::bing_maps;
 use crate::bing_maps::{Client, MapItem};
 use crate::geo_coord::GeoBounds;
-use async_channel::{bounded, unbounded, Receiver, Sender};
 use clap::Parser;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::Mutex;
 use tokio::{
     fs::{remove_file, File},
     io::AsyncWriteExt,
     spawn,
+    sync::mpsc::channel,
 };
 
 #[derive(Clone, Parser)]
@@ -34,8 +37,9 @@ pub struct ScrapeArgs {
 pub async fn scrape(cli: ScrapeArgs) -> anyhow::Result<()> {
     let mut output = File::create(&cli.output_path).await?;
 
-    let (regions, region_count) = world_regions(cli.step_size);
-    let (response_tx, response_rx) = bounded((cli.parallelism as usize) * 10);
+    let regions = world_regions(cli.step_size);
+    let region_count = regions.lock().await.len();
+    let (response_tx, response_rx) = channel((cli.parallelism as usize) * 10);
     for _ in 0..cli.parallelism {
         spawn(fetch_regions(
             cli.store_name.clone(),
@@ -62,12 +66,12 @@ pub async fn scrape(cli: ScrapeArgs) -> anyhow::Result<()> {
 async fn write_outputs(
     cli: &ScrapeArgs,
     output: &mut File,
-    response_rx: Receiver<bing_maps::Result<Vec<MapItem>>>,
+    mut response_rx: Receiver<bing_maps::Result<Vec<MapItem>>>,
     region_count: usize,
 ) -> anyhow::Result<()> {
     let mut found = HashSet::new();
     let mut completed_regions: usize = 0;
-    while let Ok(response) = response_rx.recv().await {
+    while let Some(response) = response_rx.recv().await {
         let listing = response?;
         for x in listing {
             if found.insert(x.id.clone()) {
@@ -89,32 +93,20 @@ async fn write_outputs(
     Ok(())
 }
 
-fn world_regions(step_size: f64) -> (Receiver<GeoBounds>, usize) {
+fn world_regions(step_size: f64) -> Arc<Mutex<Vec<GeoBounds>>> {
     let all_regions = GeoBounds::globe(step_size);
-    let count = all_regions.len();
-
-    let (tx, rx) = unbounded();
-    spawn(async move {
-        for region in all_regions {
-            if tx.send(region).await.is_err() {
-                break;
-            }
-        }
-        tx.close();
-    });
-
-    (rx, count)
+    Arc::new(Mutex::new(all_regions))
 }
 
 async fn fetch_regions(
     store_name: String,
     max_subdivisions: i32,
     max_retries: i32,
-    tasks: Receiver<GeoBounds>,
+    tasks: Arc<Mutex<Vec<GeoBounds>>>,
     results: Sender<bing_maps::Result<Vec<MapItem>>>,
 ) {
     let client = Client::new();
-    while let Ok(bounds) = tasks.recv().await {
+    while let Some(bounds) = pop_task(&tasks).await {
         let response =
             fetch_bounds_subdivided(&client, &store_name, bounds, max_retries, max_subdivisions)
                 .await;
@@ -127,6 +119,10 @@ async fn fetch_regions(
             break;
         }
     }
+}
+
+async fn pop_task(tasks: &Arc<Mutex<Vec<GeoBounds>>>) -> Option<GeoBounds> {
+    tasks.lock().await.pop()
 }
 
 async fn fetch_bounds_subdivided(
