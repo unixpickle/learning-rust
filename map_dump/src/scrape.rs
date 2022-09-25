@@ -27,6 +27,9 @@ pub struct ScrapeArgs {
     #[clap(short, long, value_parser, default_value_t = 5)]
     retries: i32,
 
+    #[clap(short, long, value_parser)]
+    quiet: bool,
+
     #[clap(value_parser)]
     store_name: String,
 
@@ -81,14 +84,19 @@ async fn write_outputs(
             }
         }
         completed_regions += 1;
-        println!(
-            "store \"{}\": completed {}/{} queries ({:.3}%, found {})",
-            cli.store_name,
-            completed_regions,
-            region_count,
-            100.0 * (completed_regions as f64) / (region_count as f64),
-            found.len()
-        );
+        if !cli.quiet
+            || completed_regions == region_count
+            || completed_regions % (region_count / 100).max(1) == 0
+        {
+            println!(
+                "store \"{}\": completed {}/{} queries ({:.3}%, found {})",
+                cli.store_name,
+                completed_regions,
+                region_count,
+                100.0 * (completed_regions as f64) / (region_count as f64),
+                found.len()
+            );
+        }
     }
     Ok(())
 }

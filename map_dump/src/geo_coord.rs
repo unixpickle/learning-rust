@@ -26,28 +26,31 @@ impl GeoCoord {
         Self((self.0 + other.0) / 2.0, (self.1 + other.1) / 2.0)
     }
 
-    // Compute the geodesic distance in radians between two coordinates.
-    pub fn geo_dist(&self, other: &Self) -> f64 {
-        let v1 = self.vector();
-        let v2 = other.vector();
-        let cos_theta = v1.0 * v2.0 + v1.1 * v2.1 + v1.2 * v2.2;
-        cos_theta.acos()
-    }
-
     // Compute a random coordinate on the sphere.
     pub fn random<R: Rng>(rng: &mut R) -> Self {
         let latitude = (Uniform::<f64>::new(-1.0, 1.0).sample(rng).acos() - PI / 2.0) * 180.0 / PI;
         let longitude = Uniform::new(-180.0, 180.0).sample(rng);
         GeoCoord(latitude, longitude)
     }
+}
 
-    fn vector(&self) -> (f64, f64, f64) {
-        let (lat, lon) = (self.0 * PI / 180.0, self.1 * PI / 180.0);
+#[derive(Clone, Debug)]
+pub struct VecGeoCoord(f64, f64, f64);
+
+impl VecGeoCoord {
+    pub fn cos_geo_dist(&self, other: &Self) -> f64 {
+        self.0 * other.0 + self.1 * other.1 + self.2 * other.2
+    }
+}
+
+impl From<GeoCoord> for VecGeoCoord {
+    fn from(x: GeoCoord) -> VecGeoCoord {
+        let (lat, lon) = (x.0 * PI / 180.0, x.1 * PI / 180.0);
         let z = lat.sin();
         let radius = lat.cos();
         let x = radius * lon.cos();
         let y = radius * lon.sin();
-        (x, y, z)
+        VecGeoCoord(x, y, z)
     }
 }
 
@@ -94,7 +97,7 @@ impl GeoBounds {
 
 #[cfg(test)]
 mod tests {
-    use super::GeoCoord;
+    use super::{GeoCoord, VecGeoCoord};
     use std::f64::consts::PI;
 
     #[test]
@@ -104,9 +107,23 @@ mod tests {
             (GeoCoord(10.0, -20.0), GeoCoord(-15.0, 100.0), 2.118313649),
         ];
         for (p1, p2, expected) in cases {
-            let actual = p1.geo_dist(&p2);
+            let actual = VecGeoCoord::from(p1)
+                .cos_geo_dist(&VecGeoCoord::from(p2))
+                .acos();
             println!("{}, {}", actual, expected);
             assert!((actual - expected).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn vec_geo_coord_from() {
+        for gc in [
+            GeoCoord(0.0, 0.0),
+            GeoCoord(10.0, -20.0),
+            GeoCoord(80.0, 70.0),
+        ] {
+            let v = VecGeoCoord::from(gc);
+            assert!((v.cos_geo_dist(&v) - 1.0).abs() < 1e-8);
         }
     }
 }

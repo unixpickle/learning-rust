@@ -1,5 +1,6 @@
 mod bing_maps;
 mod clean;
+mod cooccurrence;
 mod geo_coord;
 mod scrape;
 
@@ -17,6 +18,10 @@ enum Cli {
         #[clap(flatten)]
         args: clean::CleanArgs,
     },
+    Cooccurrence {
+        #[clap(flatten)]
+        args: cooccurrence::CoocurrenceArgs,
+    },
 }
 
 #[tokio::main]
@@ -25,6 +30,7 @@ async fn main() -> ExitCode {
     if let Err(e) = match cli {
         Cli::Scrape { args } => scrape::scrape(args).await,
         Cli::Clean { args } => clean::clean(args).await,
+        Cli::Cooccurrence { args } => cooccurrence::cooccurrence(args).await,
     } {
         eprintln!("{}", e);
         ExitCode::FAILURE
