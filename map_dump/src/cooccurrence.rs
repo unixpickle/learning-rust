@@ -5,7 +5,7 @@ use crate::{
 use ndarray::{Array1, Array2, LinalgScalar};
 use rand::{rngs::StdRng, SeedableRng};
 use serde_json::{Map, Value};
-use std::{collections::HashMap, ops::AddAssign, path::PathBuf};
+use std::{collections::HashMap, f64::consts::PI, ops::AddAssign, path::PathBuf};
 
 use clap::Parser;
 use tokio::{
@@ -38,6 +38,18 @@ pub struct CoocurrenceArgs {
 }
 
 pub async fn cooccurrence(cli: CoocurrenceArgs) -> anyhow::Result<()> {
+    println!("Taking {} samples with radius {}", cli.samples, cli.radius);
+    println!(
+        "For radius {}, samples should be at least {}",
+        cli.radius,
+        (4.0 * PI / (PI * cli.radius.powi(2))).ceil() as i64
+    );
+    println!(
+        "For {} samples, radius should be at least {:.08}",
+        cli.samples,
+        ((4.0 * PI / (cli.samples as f64)) / PI).sqrt()
+    );
+
     let input_dir = PathBuf::from(cli.input_dir);
 
     let mut store_locations = HashMap::new();
@@ -109,7 +121,11 @@ pub async fn cooccurrence(cli: CoocurrenceArgs) -> anyhow::Result<()> {
     drop(results_rx);
 
     println!("serializing resulting matrix to {}...", cli.output_path);
-    let serialized = serde_json::to_string(&matrices.into_json(sorted_names))?;
+    let metadata = Value::Object(Map::from_iter([
+        ("samples".to_owned(), Value::from(cli.samples)),
+        ("radius".to_owned(), Value::from(cli.radius)),
+    ]));
+    let serialized = serde_json::to_string(&matrices.into_json(sorted_names, metadata))?;
     let mut writer = File::create(cli.output_path).await?;
     writer.write_all(serialized.as_bytes()).await?;
     writer.flush().await?;
@@ -193,12 +209,13 @@ impl Matrices {
         self.count += other.count;
     }
 
-    fn into_json(mut self, names: Vec<String>) -> Value {
+    fn into_json(mut self, names: Vec<String>, metadata: Value) -> Value {
         let correlation_denom = outer_product(self.correlation.clone().into_diag().to_owned())
             .map(|x| x.sqrt().max(1e-8));
         self.correlation = self.correlation / correlation_denom;
         self.second_moment /= self.count as f64;
         Map::from_iter([
+            ("metadata".to_owned(), metadata),
             (
                 "cooccurrence".to_owned(),
                 Value::from(matrix_vec(self.cooccurrence)),
