@@ -1,6 +1,5 @@
 use std::f64::consts::PI;
 
-use rand::{distributions::Uniform, prelude::Distribution, Rng};
 use serde::{Deserialize, Serialize};
 
 // A (latitude, longitude) pair.
@@ -24,13 +23,6 @@ impl GeoCoord {
 
     pub fn mid(&self, other: &Self) -> Self {
         Self((self.0 + other.0) / 2.0, (self.1 + other.1) / 2.0)
-    }
-
-    // Compute a random coordinate on the sphere.
-    pub fn random<R: Rng>(rng: &mut R) -> Self {
-        let latitude = (Uniform::<f64>::new(-1.0, 1.0).sample(rng).acos() - PI / 2.0) * 180.0 / PI;
-        let longitude = Uniform::new(-180.0, 180.0).sample(rng);
-        GeoCoord(latitude, longitude)
     }
 }
 
